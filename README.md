@@ -95,3 +95,11 @@ docker compose up -d
 docker build -t icekale/stock-lu-tracker:latest .
 docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data icekale/stock-lu-tracker:latest
 ```
+
+## 7. 自动发布 Docker（GitHub Actions）
+
+已配置工作流：`.github/workflows/docker-publish.yml`
+
+- 当代码 push 到 `main`：自动构建并推送 `icekale/stock-lu-tracker:latest`
+- 当 push 标签（如 `v0.1.1`）：自动推送对应版本标签
+- 也支持在 GitHub Actions 页面手动触发
