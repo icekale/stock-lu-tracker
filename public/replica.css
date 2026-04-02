@@ -437,7 +437,9 @@ body.replica-body {
   }
 
   .replica-table.adjust-table th:nth-child(5),
-  .replica-table.adjust-table td:nth-child(5) {
+  .replica-table.adjust-table td:nth-child(5),
+  .replica-table.adjust-table th:nth-child(6),
+  .replica-table.adjust-table td:nth-child(6) {
     display: none;
   }
 

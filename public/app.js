@@ -774,7 +774,7 @@ function renderAdjustTable(rows) {
   }
 
   if (rows.length === 0) {
-    els.adjustRowsBody.innerHTML = `<tr><td colspan="5" class="replica-empty">暂无调仓数据</td></tr>`;
+    els.adjustRowsBody.innerHTML = `<tr><td colspan="6" class="replica-empty">暂无调仓数据</td></tr>`;
     return;
   }
 
@@ -786,6 +786,7 @@ function renderAdjustTable(rows) {
       const actionLabel = escapeHtml(item.actionLabel);
       const delta = escapeHtml(formatDelta(item.delta));
       const cost = escapeHtml(formatCost(item.cost));
+      const holdingAmount = escapeHtml(item.marketValue === null ? "-" : formatCurrency(item.marketValue, 0));
       return `
         <tr>
           <td class="mono">${symbol}</td>
@@ -793,6 +794,7 @@ function renderAdjustTable(rows) {
           <td><span class="badge ${actionClass}">${actionLabel}</span></td>
           <td class="mono ${deltaClass(item.delta)}">${delta}</td>
           <td class="mono cost-cell">${cost}</td>
+          <td class="mono">${holdingAmount}</td>
         </tr>
       `;
     })
@@ -1033,12 +1035,13 @@ async function bootstrap() {
     await loadData();
   } catch (error) {
     const message = error?.message || "加载失败";
-    const row = `<tr><td colspan="5" class="replica-empty">${escapeHtml(message)}</td></tr>`;
+    const adjustRow = `<tr><td colspan="6" class="replica-empty">${escapeHtml(message)}</td></tr>`;
+    const latestRow = `<tr><td colspan="5" class="replica-empty">${escapeHtml(message)}</td></tr>`;
     if (els.adjustRowsBody) {
-      els.adjustRowsBody.innerHTML = row;
+      els.adjustRowsBody.innerHTML = adjustRow;
     }
     if (els.latestRowsBody) {
-      els.latestRowsBody.innerHTML = row;
+      els.latestRowsBody.innerHTML = latestRow;
     }
   }
 }
