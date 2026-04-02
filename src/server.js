@@ -260,7 +260,7 @@ app.get("/auto-sync", (_req, res) => {
   res.redirect(302, "/admin.html");
 });
 
-app.use(["/api/auto-tracking", "/api/master-snapshots"], requireAdminAuth);
+app.use("/api/auto-tracking", requireAdminAuth);
 
 app.use(express.static(path.join(process.cwd(), "public")));
 
