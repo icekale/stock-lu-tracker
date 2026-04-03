@@ -100,6 +100,8 @@ docker run -d \
 docker compose up -d
 ```
 
+默认示例已固定到 `v0.1.6`，这样部署更稳定；如果你希望始终跟随最新构建，可手动改回 `latest`。
+
 如需开启后台密码，在 compose 的 `environment` 里增加：
 
 ```yaml
@@ -133,7 +135,7 @@ docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PAS
 ```yaml
 services:
   stock-lu:
-    image: icekale/stock-lu-tracker:latest
+    image: icekale/stock-lu-tracker:v0.1.6
     container_name: stock-lu
     network_mode: bridge
     ports:
@@ -158,6 +160,7 @@ services:
 - 首次部署后后台地址：`http://<你的UnraidIP>:8787/admin.html`
 - 也可直接使用仓库内示例文件：`docker-compose.unraid.yml`
 - 如果你通过反向代理 `https` 访问后台，可将 `ADMIN_COOKIE_SECURE` 改为 `true`
+- 如需升级到后续版本，只要把 `image` 标签改成新的版本号，再执行一次拉取和重建即可
 
 ## 7. 自动发布 Docker（GitHub Actions）
 

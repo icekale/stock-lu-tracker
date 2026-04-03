@@ -1,6 +1,6 @@
 services:
   stock-lu:
-    image: icekale/stock-lu-tracker:latest
+    image: icekale/stock-lu-tracker:v0.1.6
     container_name: stock-lu
     network_mode: bridge
     ports:
