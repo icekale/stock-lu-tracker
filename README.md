@@ -86,8 +86,10 @@ docker run -d \
   -e ADMIN_PASSWORD='请改成你的后台密码' \
   -e ADMIN_COOKIE_SECURE=false \
   -e TESSDATA_PREFIX=/app \
-  icekale/stock-lu-tracker:latest
+  icekale/stock-lu-tracker:v0.1.6
 ```
+
+如需始终跟随最新构建，可把镜像标签改回 `latest`。
 
 访问：
 
@@ -119,8 +121,8 @@ OCR_CACHE_TTL_MINUTES: "1440"
 ### 6.3 本地构建并运行
 
 ```bash
-docker build -t icekale/stock-lu-tracker:latest .
-docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PASSWORD='请改成你的后台密码' -e ADMIN_COOKIE_SECURE=false icekale/stock-lu-tracker:latest
+docker build -t icekale/stock-lu-tracker:v0.1.6 .
+docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PASSWORD='请改成你的后台密码' -e ADMIN_COOKIE_SECURE=false icekale/stock-lu-tracker:v0.1.6
 ```
 
 说明：
@@ -161,6 +163,25 @@ services:
 - 也可直接使用仓库内示例文件：`docker-compose.unraid.yml`
 - 如果你通过反向代理 `https` 访问后台，可将 `ADMIN_COOKIE_SECURE` 改为 `true`
 - 如需升级到后续版本，只要把 `image` 标签改成新的版本号，再执行一次拉取和重建即可
+
+### 6.5 Unraid 升级步骤
+
+如果你当前已经在 Unraid 上运行旧版本，可按下面步骤升级到新版本：
+
+1. 先备份你的数据目录，例如：`/mnt/user/appdata/stock-lu/data`
+2. 将 compose 或模板里的镜像标签改成新版本，例如：`icekale/stock-lu-tracker:v0.1.6`
+3. 在 Unraid 的 Compose Manager 中执行重新拉取并重建
+4. 如果你使用命令行，也可以执行：
+
+```bash
+docker compose -f docker-compose.unraid.yml pull
+docker compose -f docker-compose.unraid.yml up -d
+```
+
+5. 升级后打开：
+   - 主页：`http://<你的UnraidIP>:8787`
+   - 后台：`http://<你的UnraidIP>:8787/admin.html`
+6. 若页面仍显示旧静态资源，浏览器执行一次强制刷新即可
 
 ## 7. 自动发布 Docker（GitHub Actions）
 
