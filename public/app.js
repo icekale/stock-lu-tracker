@@ -497,9 +497,15 @@ function parsePostMetrics(snapshot) {
   const mergedText = normalizeStatsText(`${String(snapshot.rawText || "")}\n${String(snapshot.ocrText || "")}`);
   const primaryText = rawText || mergedText;
 
-  const cumulativeNetValue = parseCumulativeNetValue(primaryText) ?? parseCumulativeNetValue(mergedText);
-  const netIndex = parseNetIndex(primaryText) ?? parseNetIndex(mergedText);
-  const yearStartNetIndex = parseYearStartIndex(primaryText) ?? parseYearStartIndex(mergedText);
+  const explicitCumulativeNetValue = toNumber(snapshot.cumulativeNetValue);
+  const explicitNetIndex = toNumber(snapshot.netIndex);
+  const explicitYearStartNetIndex = toNumber(snapshot.yearStartNetIndex);
+
+  const cumulativeNetValue =
+    explicitCumulativeNetValue ?? parseCumulativeNetValue(primaryText) ?? parseCumulativeNetValue(mergedText);
+  const netIndex = explicitNetIndex ?? parseNetIndex(primaryText) ?? parseNetIndex(mergedText);
+  const yearStartNetIndex =
+    explicitYearStartNetIndex ?? parseYearStartIndex(primaryText) ?? parseYearStartIndex(mergedText);
 
   return {
     cumulativeNetValue,

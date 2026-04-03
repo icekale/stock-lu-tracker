@@ -5,6 +5,7 @@ const express = require("express");
 
 const { ensureStore, readStore, mutateStore } = require("./store");
 const { buildPortfolio, buildMonthlyStatus, toMonthKey } = require("./portfolio");
+const { extractSnapshotPostMetrics } = require("./post-metrics");
 const { refreshQuotes } = require("./quotes");
 const { toApiSymbol, normalizeMarket, normalizeSecurityName } = require("./symbols");
 const {
@@ -260,8 +261,12 @@ app.get("/auto-sync", (_req, res) => {
   res.redirect(302, "/admin.html");
 });
 
+app.use("/api/state", requireAdminAuth);
+app.use("/api/trades", requireAdminAuth);
+app.use("/api/quotes", requireAdminAuth);
+app.use("/api/snapshots", requireAdminAuth);
+app.use("/api/monthly-updates", requireAdminAuth);
 app.use("/api/auto-tracking", requireAdminAuth);
-
 app.use(express.static(path.join(process.cwd(), "public")));
 
 function pushSnapshot(store, source = "manual") {
@@ -554,6 +559,17 @@ function sanitizeMasterSnapshotRow(row) {
   };
 
   if (action !== "HOLD") {
+    const normalizedQty = toFiniteNumber(row.changeQty);
+    const normalizedCost = toPositiveNumber(row.latestCost ?? row.referenceCost ?? row.latestPrice);
+
+    if (normalizedQty !== null) {
+      output.changeQty = Math.abs(normalizedQty);
+    }
+    if (normalizedCost !== null) {
+      output.latestCost = roundNumeric(normalizedCost, 6);
+      output.referenceCost = roundNumeric(toFiniteNumber(row.referenceCost) ?? normalizedCost, 6);
+    }
+
     return output;
   }
 
@@ -764,6 +780,7 @@ function sanitizeMasterSnapshotRecord(snapshot, options = {}) {
   return {
     ...snapshot,
     rows: sanitizedRows,
+    ...extractSnapshotPostMetrics(snapshot),
     anomalySummary: {
       rowCount: sanitizedRows.length,
       changedRowCount,
@@ -774,6 +791,196 @@ function sanitizeMasterSnapshotRecord(snapshot, options = {}) {
 
 function sanitizeSnapshotCollection(snapshots, options = {}) {
   return (Array.isArray(snapshots) ? snapshots : []).map((snapshot) => sanitizeMasterSnapshotRecord(snapshot, options));
+}
+
+function mergeSnapshotMetricFields(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return snapshot;
+  }
+
+  const manualMetrics = normalizeManualMetrics(snapshot.manualMetrics || null);
+  const metrics = extractSnapshotPostMetrics(buildMetricsSourceSnapshot(snapshot, manualMetrics));
+  return {
+    ...snapshot,
+    manualMetrics,
+    cumulativeNetValue: metrics.cumulativeNetValue,
+    netIndex: metrics.netIndex,
+    yearStartNetIndex: metrics.yearStartNetIndex
+  };
+}
+
+function mergeMonthlyUpdateMetricFields(update, metrics) {
+  if (!update || typeof update !== "object") {
+    return update;
+  }
+
+  const netValue = toFiniteNumber(metrics?.cumulativeNetValue ?? update.netValue);
+  const netIndex = toFiniteNumber(metrics?.netIndex ?? update.netIndex);
+  const yearStartNetIndex = toFiniteNumber(metrics?.yearStartNetIndex ?? update.yearStartNetIndex);
+
+  return {
+    ...update,
+    netValue: netValue === null ? null : roundNumeric(netValue, 2),
+    netIndex: netIndex === null ? null : roundNumeric(netIndex, 4),
+    yearStartNetIndex: yearStartNetIndex === null ? null : roundNumeric(yearStartNetIndex, 4)
+  };
+}
+
+function buildMetricsSourceSnapshot(snapshot, manualMetrics = null) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return {
+      manualMetrics: normalizeManualMetrics(manualMetrics),
+      cumulativeNetValue: null,
+      netIndex: null,
+      yearStartNetIndex: null
+    };
+  }
+
+  return {
+    ...snapshot,
+    manualMetrics: normalizeManualMetrics(manualMetrics),
+    cumulativeNetValue: null,
+    netIndex: null,
+    yearStartNetIndex: null
+  };
+}
+
+function parseNullableMetricNumber(rawValue, fieldLabel) {
+  if (rawValue === null || typeof rawValue === "undefined") {
+    return undefined;
+  }
+
+  const text = String(rawValue).trim();
+  if (!text) {
+    return null;
+  }
+
+  const number = Number(text);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw createHttpError(400, `${fieldLabel} 必须大于 0`);
+  }
+
+  return number;
+}
+
+function normalizeManualMetrics(manualMetrics) {
+  if (!manualMetrics || typeof manualMetrics !== "object") {
+    return null;
+  }
+
+  const normalized = {
+    cumulativeNetValue: toPositiveNumber(manualMetrics.cumulativeNetValue),
+    netIndex: toPositiveNumber(manualMetrics.netIndex),
+    yearStartNetIndex: toPositiveNumber(manualMetrics.yearStartNetIndex)
+  };
+
+  if (
+    normalized.cumulativeNetValue === null &&
+    normalized.netIndex === null &&
+    normalized.yearStartNetIndex === null
+  ) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function extractManualOnlyMetrics(manualMetrics) {
+  return extractSnapshotPostMetrics(buildMetricsSourceSnapshot(null, normalizeManualMetrics(manualMetrics)));
+}
+
+function normalizePostId(value) {
+  return String(value || "").trim();
+}
+
+function findSnapshotIndexByMonthlyUpdate(snapshots, update) {
+  const list = Array.isArray(snapshots) ? snapshots : [];
+  const postId = normalizePostId(update?.postId);
+  if (postId) {
+    const directIndex = list.findIndex((item) => normalizePostId(item.postId) === postId);
+    if (directIndex >= 0) {
+      return directIndex;
+    }
+  }
+
+  const source = String(update?.source || "").trim().toLowerCase();
+  const month = String(update?.month || toMonthKey(update?.postedAt)).trim();
+  if (!source || !month) {
+    return -1;
+  }
+
+  return list.findIndex(
+    (item) =>
+      String(item?.source || "").trim().toLowerCase() === source &&
+      String(toMonthKey(item?.postedAt) || "").trim() === month
+  );
+}
+
+async function backfillStoredPostMetrics() {
+  await mutateStore((draft) => {
+    const snapshotMetricsByMonthlyId = new Map();
+    const snapshotMetricsByMonth = new Map();
+    const snapshotMetaByMonthlyId = new Map();
+    const snapshotMetaByMonth = new Map();
+
+    draft.masterSnapshots = (draft.masterSnapshots || []).map((snapshot) => {
+      const nextSnapshot = mergeSnapshotMetricFields(snapshot);
+      const metrics = extractSnapshotPostMetrics(nextSnapshot);
+      const month = toMonthKey(nextSnapshot.postedAt);
+      const monthlyId = `${nextSnapshot.source}:${nextSnapshot.postId}`;
+      const meta = {
+        postId: nextSnapshot.postId || null,
+        title: nextSnapshot.title || "",
+        link: nextSnapshot.link || ""
+      };
+
+      snapshotMetricsByMonthlyId.set(monthlyId, metrics);
+      snapshotMetricsByMonth.set(`${nextSnapshot.source}:${month}`, metrics);
+      snapshotMetaByMonthlyId.set(monthlyId, meta);
+      snapshotMetaByMonth.set(`${nextSnapshot.source}:${month}`, meta);
+      return nextSnapshot;
+    });
+
+    draft.monthlyUpdates = (draft.monthlyUpdates || []).map((update) => {
+      const manualMetrics = normalizeManualMetrics(update.manualMetrics || null);
+      const meta =
+        snapshotMetaByMonthlyId.get(String(update.id || "").trim()) ||
+        snapshotMetaByMonth.get(`${update.source}:${update.month}`) ||
+        null;
+      const snapshotMetrics =
+        snapshotMetricsByMonthlyId.get(String(update.id || "").trim()) ||
+        snapshotMetricsByMonth.get(`${update.source}:${update.month}`) ||
+        null;
+      const manualOnlyMetrics = extractManualOnlyMetrics(manualMetrics);
+      const metrics = {
+        cumulativeNetValue: snapshotMetrics?.cumulativeNetValue ?? manualOnlyMetrics.cumulativeNetValue,
+        netIndex: snapshotMetrics?.netIndex ?? manualOnlyMetrics.netIndex,
+        yearStartNetIndex: snapshotMetrics?.yearStartNetIndex ?? manualOnlyMetrics.yearStartNetIndex
+      };
+      return {
+        ...mergeMonthlyUpdateMetricFields(
+          {
+            ...update,
+            netValue: null,
+            netIndex: null,
+            yearStartNetIndex: null,
+            manualMetrics
+          },
+          metrics
+        ),
+        postId: String(update.postId || meta?.postId || "").trim() || null,
+        title: String(update.title || meta?.title || "").trim(),
+        link: String(update.link || meta?.link || "").trim()
+      };
+    });
+
+    const autoTracking = ensureAutoTrackingState(draft);
+    if (autoTracking.latestSnapshot) {
+      autoTracking.latestSnapshot = mergeSnapshotMetricFields(autoTracking.latestSnapshot);
+    } else {
+      autoTracking.latestSnapshot = draft.masterSnapshots[0] || null;
+    }
+  });
 }
 
 function getAutoTrackingPublic(autoTrackingInput) {
@@ -895,9 +1102,21 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
           continue;
         }
 
+        const existingSnapshotRecord = (draft.masterSnapshots || []).find((item) => item.postId === sanitizedSnapshot.postId) || null;
+        const month = toMonthKey(sanitizedSnapshot.postedAt);
+        const monthKey = `${sanitizedSnapshot.source}:${sanitizedSnapshot.postId}`;
+        const existingMonthIndex = draft.monthlyUpdates.findIndex((item) => item.id === monthKey);
+        const existingMonthRecord = existingMonthIndex >= 0 ? draft.monthlyUpdates[existingMonthIndex] : null;
+        const preservedManualMetrics = normalizeManualMetrics(
+          existingSnapshotRecord?.manualMetrics || existingMonthRecord?.manualMetrics || null
+        );
+        const snapshotMetrics = extractSnapshotPostMetrics(
+          buildMetricsSourceSnapshot(sanitizedSnapshot, preservedManualMetrics)
+        );
+
         let importedTradesInSnapshot = 0;
 
-        for (const row of snapshot.rows) {
+        for (const row of sanitizedSnapshot.rows) {
           if (!["BUY", "SELL"].includes(row.action)) {
             continue;
           }
@@ -916,7 +1135,7 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
 
           let quantity = rawQty;
           const apiSymbol = toApiSymbol(normalized.symbol, normalized.market);
-          const dedupeKey = `${snapshot.postId}|${apiSymbol}|${row.action}|${rawQty}|${rawPrice}`;
+          const dedupeKey = `${sanitizedSnapshot.postId}|${apiSymbol}|${row.action}|${rawQty}|${rawPrice}`;
           if (importedTradeKeys.has(dedupeKey)) {
             continue;
           }
@@ -942,9 +1161,9 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
             quantity,
             price: rawPrice,
             fee: 0,
-            tradeDate: snapshot.postedAt,
+            tradeDate: sanitizedSnapshot.postedAt,
             name: row.name || "",
-            note: `auto_sync:${snapshot.source}:${snapshot.postId}:${row.actionLabel || row.action}`
+            note: `auto_sync:${sanitizedSnapshot.source}:${sanitizedSnapshot.postId}:${row.actionLabel || row.action}`
           });
 
           draft.trades.push(trade);
@@ -953,19 +1172,23 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
           importedTradesInSnapshot += 1;
         }
 
-        const month = toMonthKey(sanitizedSnapshot.postedAt);
-        const monthKey = `${sanitizedSnapshot.source}:${sanitizedSnapshot.postId}`;
-        const existingMonthIndex = draft.monthlyUpdates.findIndex((item) => item.id === monthKey);
         const notePrefix = shouldRefreshSnapshot || existingMonthIndex >= 0 ? "自动重抓" : "自动抓取";
         const nextMonthRecord = {
-          ...(existingMonthIndex >= 0 ? draft.monthlyUpdates[existingMonthIndex] : {}),
+          ...(existingMonthRecord || {}),
           id: monthKey,
           month,
           source: sanitizedSnapshot.source,
+          postId: sanitizedSnapshot.postId,
+          title: sanitizedSnapshot.title || "",
+          link: sanitizedSnapshot.link || "",
           postedAt: sanitizedSnapshot.postedAt,
           note: `${notePrefix}: ${sanitizedSnapshot.rows.length} 行`,
+          netValue: snapshotMetrics.cumulativeNetValue,
+          netIndex: snapshotMetrics.netIndex,
+          yearStartNetIndex: snapshotMetrics.yearStartNetIndex,
+          manualMetrics: preservedManualMetrics,
           createdAt:
-            existingMonthIndex >= 0 ? draft.monthlyUpdates[existingMonthIndex].createdAt : new Date().toISOString(),
+            existingMonthRecord ? existingMonthRecord.createdAt : new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
 
@@ -985,6 +1208,10 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
           rows: sanitizedSnapshot.rows,
           rawText: sanitizedSnapshot.rawText,
           ocrText: sanitizedSnapshot.ocrText,
+          cumulativeNetValue: snapshotMetrics.cumulativeNetValue,
+          netIndex: snapshotMetrics.netIndex,
+          yearStartNetIndex: snapshotMetrics.yearStartNetIndex,
+          manualMetrics: preservedManualMetrics,
           images: sanitizedSnapshot.images,
           importedTrades: importedTradesInSnapshot,
           createdAt: new Date().toISOString()
@@ -1324,6 +1551,107 @@ app.post("/api/monthly-updates", async (req, res, next) => {
 
     res.status(201).json({
       update,
+      monthlyStatus: buildMonthlyStatus(store.monthlyUpdates || [])
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/monthly-updates/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const clearManualMetrics = Boolean(req.body?.clearManualMetrics);
+    const netValueWan = clearManualMetrics ? undefined : parseNullableMetricNumber(req.body?.netValueWan, "累计净值(万)");
+    const netIndex = clearManualMetrics ? undefined : parseNullableMetricNumber(req.body?.netIndex, "净值指数");
+    const yearStartNetIndex =
+      clearManualMetrics ? undefined : parseNullableMetricNumber(req.body?.yearStartNetIndex, "年初净值指数");
+    const nextManualMetrics = clearManualMetrics
+      ? null
+      : normalizeManualMetrics({
+          cumulativeNetValue: typeof netValueWan === "undefined" ? undefined : netValueWan * 10_000,
+          netIndex,
+          yearStartNetIndex
+        });
+
+    let updatedRecord = null;
+    let updatedSnapshot = null;
+
+    await mutateStore((store) => {
+      const monthlyIndex = (store.monthlyUpdates || []).findIndex((item) => item.id === id);
+      if (monthlyIndex < 0) {
+        throw createHttpError(404, "未找到对应的月度记录");
+      }
+
+      const currentUpdate = store.monthlyUpdates[monthlyIndex];
+      const snapshotIndex = findSnapshotIndexByMonthlyUpdate(store.masterSnapshots, currentUpdate);
+      const snapshotRecord = snapshotIndex >= 0 ? store.masterSnapshots[snapshotIndex] : null;
+      const snapshotMetrics = extractSnapshotPostMetrics(
+        buildMetricsSourceSnapshot(snapshotRecord, nextManualMetrics)
+      );
+      const manualOnlyMetrics = extractManualOnlyMetrics(nextManualMetrics);
+      const mergedMetrics = {
+        cumulativeNetValue: snapshotMetrics.cumulativeNetValue ?? manualOnlyMetrics.cumulativeNetValue,
+        netIndex: snapshotMetrics.netIndex ?? manualOnlyMetrics.netIndex,
+        yearStartNetIndex: snapshotMetrics.yearStartNetIndex ?? manualOnlyMetrics.yearStartNetIndex
+      };
+      const updatedAt = new Date().toISOString();
+
+      updatedRecord = {
+        ...mergeMonthlyUpdateMetricFields(
+          {
+            ...currentUpdate,
+            netValue: null,
+            netIndex: null,
+            yearStartNetIndex: null,
+            manualMetrics: nextManualMetrics,
+            updatedAt
+          },
+          mergedMetrics
+        )
+      };
+      store.monthlyUpdates[monthlyIndex] = updatedRecord;
+
+      if (snapshotIndex >= 0) {
+        updatedSnapshot = {
+          ...snapshotRecord,
+          manualMetrics: nextManualMetrics,
+          updatedAt,
+          ...extractSnapshotPostMetrics(buildMetricsSourceSnapshot(snapshotRecord, nextManualMetrics))
+        };
+        store.masterSnapshots[snapshotIndex] = updatedSnapshot;
+      }
+
+      const autoTracking = ensureAutoTrackingState(store);
+      if (autoTracking.latestSnapshot) {
+        const latestPostId = normalizePostId(autoTracking.latestSnapshot.postId);
+        const targetPostId = normalizePostId(currentUpdate.postId);
+        const sameLatestPost =
+          latestPostId &&
+          targetPostId &&
+          latestPostId === targetPostId;
+
+        if (sameLatestPost) {
+          autoTracking.latestSnapshot = {
+            ...autoTracking.latestSnapshot,
+            manualMetrics: nextManualMetrics,
+            updatedAt,
+            ...extractSnapshotPostMetrics(buildMetricsSourceSnapshot(autoTracking.latestSnapshot, nextManualMetrics))
+          };
+        } else if (updatedSnapshot && normalizePostId(updatedSnapshot.postId) === latestPostId) {
+          autoTracking.latestSnapshot = updatedSnapshot;
+        }
+      }
+
+      if (!autoTracking.latestSnapshot && updatedSnapshot) {
+        autoTracking.latestSnapshot = updatedSnapshot;
+      }
+    });
+
+    const store = await readStore();
+    res.json({
+      update: updatedRecord,
+      snapshot: updatedSnapshot,
       monthlyStatus: buildMonthlyStatus(store.monthlyUpdates || [])
     });
   } catch (error) {
@@ -1712,6 +2040,7 @@ app.use((error, _req, res, _next) => {
 
 ensureStore()
   .then(async () => {
+    await backfillStoredPostMetrics();
     await scheduleAutoTracking();
     runAutoTrackingJob("startup").catch((error) => {
       console.error("Auto tracking startup error:", error.message);

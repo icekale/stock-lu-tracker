@@ -6,6 +6,8 @@
 - 自动识别最新持仓帖（文本 + 图片 OCR）
 - 自动入库：生成“最新持仓快照”，并自动写入交易流水（加仓/减仓）
 - 自动定时同步（默认每 180 分钟）
+- 首页公开可看，后台配置与抓取接口可选密码保护
+- 支持月度指标人工校正，可逐行编辑、批量保存、按状态筛选
 
 ## 发布地址
 
@@ -62,6 +64,7 @@ npm start
 ## 5. 数据位置
 
 - `data/store.json`
+- Docker 镜像不会内置本地 `data` 目录内容；运行数据请始终通过 volume 挂载到 `/app/data`
 
 关键字段：
 
@@ -117,6 +120,11 @@ OCR_CACHE_TTL_MINUTES: "1440"
 docker build -t icekale/stock-lu-tracker:latest .
 docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PASSWORD='请改成你的后台密码' -e ADMIN_COOKIE_SECURE=false icekale/stock-lu-tracker:latest
 ```
+
+说明：
+
+- 构建镜像时不会打包你本机的 `data/store.json`、Cookie 或历史备份文件
+- 首次启动会在挂载目录里自动创建运行所需的数据文件
 
 ### 6.4 Unraid（docker compose，bridge + 默认权限）
 

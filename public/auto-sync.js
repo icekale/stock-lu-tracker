@@ -2,6 +2,10 @@ const state = {
   autoTracking: null,
   latestSnapshot: null,
   snapshots: [],
+  monthlyUpdates: [],
+  monthlyMetricDrafts: new Map(),
+  monthlyMetricEditingIds: new Set(),
+  monthlyMetricFilter: "all",
   catalogPosts: [],
   selectedSnapshotId: null,
   anomalyReport: null,
@@ -26,8 +30,38 @@ const els = {
   snapshotHistoryMeta: document.getElementById("snapshotHistoryMeta"),
   snapshotHistoryBody: document.getElementById("snapshotHistoryBody"),
   anomalyMeta: document.getElementById("anomalyMeta"),
-  anomalyRowsBody: document.getElementById("anomalyRowsBody")
+  anomalyRowsBody: document.getElementById("anomalyRowsBody"),
+  monthlyMetricMeta: document.getElementById("monthlyMetricMeta"),
+  monthlyMetricBody: document.getElementById("monthlyMetricBody"),
+  monthlyMetricToolbarText: document.getElementById("monthlyMetricToolbarText"),
+  monthlyMetricFilters: document.getElementById("monthlyMetricFilters"),
+  saveAllMetricsBtn: document.getElementById("saveAllMetricsBtn"),
+  discardAllMetricsBtn: document.getElementById("discardAllMetricsBtn")
 };
+
+const MONTHLY_METRIC_FIELDS = Object.freeze([
+  {
+    key: "netValueWan",
+    digits: 2,
+    step: "0.01",
+    manualMetricKey: "cumulativeNetValue",
+    updateFieldKey: "netValue"
+  },
+  {
+    key: "netIndex",
+    digits: 4,
+    step: "0.0001",
+    manualMetricKey: "netIndex",
+    updateFieldKey: "netIndex"
+  },
+  {
+    key: "yearStartNetIndex",
+    digits: 4,
+    step: "0.0001",
+    manualMetricKey: "yearStartNetIndex",
+    updateFieldKey: "yearStartNetIndex"
+  }
+]);
 
 function formatDateTime(value) {
   if (!value) {
@@ -58,6 +92,21 @@ function formatNumber(value, digits = 2) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits
   });
+}
+
+function formatInputNumber(value, digits = 2) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return "";
+  }
+
+  const factor = 10 ** digits;
+  return String(Math.round(num * factor) / factor);
+}
+
+function formatMetricHint(value, digits = 2) {
+  const formatted = formatInputNumber(value, digits);
+  return formatted || "-";
 }
 
 function escapeHtml(value) {
@@ -93,6 +142,19 @@ function monthLabelFromTitleOrDate(title, postedAt) {
     return `${year}-${month}`;
   }
   return monthLabelByDate(postedAt);
+}
+
+function formatSourceLabel(value) {
+  if (value === "xueqiu") {
+    return "雪球";
+  }
+  if (value === "weibo") {
+    return "微博";
+  }
+  if (value === "both") {
+    return "双源";
+  }
+  return value || "-";
 }
 
 function normalizePostId(value) {
@@ -186,6 +248,176 @@ function getViewingSnapshot() {
     }
   }
   return state.latestSnapshot;
+}
+
+function hasManualMetrics(value) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return ["cumulativeNetValue", "netIndex", "yearStartNetIndex"].some((key) => {
+    const num = Number(value[key]);
+    return Number.isFinite(num) && num > 0;
+  });
+}
+
+function buildPersistedMonthlyMetricDraft(update) {
+  const manualMetrics = hasManualMetrics(update?.manualMetrics) ? update.manualMetrics : null;
+
+  return {
+    netValueWan:
+      manualMetrics && Number.isFinite(Number(manualMetrics.cumulativeNetValue))
+        ? formatInputNumber(Number(manualMetrics.cumulativeNetValue) / 10_000, 2)
+        : "",
+    netIndex:
+      manualMetrics && Number.isFinite(Number(manualMetrics.netIndex))
+        ? formatInputNumber(manualMetrics.netIndex, 4)
+        : "",
+    yearStartNetIndex:
+      manualMetrics && Number.isFinite(Number(manualMetrics.yearStartNetIndex))
+        ? formatInputNumber(manualMetrics.yearStartNetIndex, 4)
+        : ""
+  };
+}
+
+function normalizeDraftFieldValue(value) {
+  return String(value ?? "").trim();
+}
+
+function getMonthlyMetricDraft(update) {
+  if (!update) {
+    return null;
+  }
+
+  return state.monthlyMetricDrafts.get(update.id) || buildPersistedMonthlyMetricDraft(update);
+}
+
+function setMonthlyMetricDraft(updateId, draft) {
+  state.monthlyMetricDrafts.set(updateId, {
+    netValueWan: normalizeDraftFieldValue(draft?.netValueWan),
+    netIndex: normalizeDraftFieldValue(draft?.netIndex),
+    yearStartNetIndex: normalizeDraftFieldValue(draft?.yearStartNetIndex)
+  });
+}
+
+function clearMonthlyMetricDraft(updateId) {
+  state.monthlyMetricDrafts.delete(updateId);
+}
+
+function isMonthlyMetricDraftDirty(update, draft) {
+  const persisted = buildPersistedMonthlyMetricDraft(update);
+  const current = draft || getMonthlyMetricDraft(update);
+  if (!current) {
+    return false;
+  }
+
+  return MONTHLY_METRIC_FIELDS.some(
+    (field) => normalizeDraftFieldValue(current[field.key]) !== normalizeDraftFieldValue(persisted[field.key])
+  );
+}
+
+function hasAnyMonthlyMetricDraftValue(draft) {
+  if (!draft) {
+    return false;
+  }
+
+  return MONTHLY_METRIC_FIELDS.some((field) => Boolean(normalizeDraftFieldValue(draft[field.key])));
+}
+
+function getMonthlyUpdateById(updateId) {
+  return (state.monthlyUpdates || []).find((item) => item.id === updateId) || null;
+}
+
+function getDirtyMonthlyMetricIds() {
+  return (state.monthlyUpdates || [])
+    .filter((update) => isMonthlyMetricDraftDirty(update, getMonthlyMetricDraft(update)))
+    .map((update) => update.id);
+}
+
+function reconcileMonthlyMetricUiState() {
+  const validIds = new Set((state.monthlyUpdates || []).map((item) => item.id));
+
+  for (const draftId of Array.from(state.monthlyMetricDrafts.keys())) {
+    if (!validIds.has(draftId)) {
+      state.monthlyMetricDrafts.delete(draftId);
+    }
+  }
+
+  state.monthlyMetricEditingIds = new Set(
+    Array.from(state.monthlyMetricEditingIds).filter((updateId) => validIds.has(updateId))
+  );
+}
+
+function syncMonthlyMetricToolbarState() {
+  const updates = Array.isArray(state.monthlyUpdates) ? state.monthlyUpdates : [];
+  const dirtyIds = getDirtyMonthlyMetricIds();
+  const editingIdSet = state.monthlyMetricEditingIds;
+  const manualCount = updates.filter((item) => hasManualMetrics(item.manualMetrics)).length;
+
+  if (els.monthlyMetricToolbarText) {
+    if (dirtyIds.length > 0) {
+      els.monthlyMetricToolbarText.textContent = `已编辑 ${editingIdSet.size} 条，待保存 ${dirtyIds.length} 条`;
+    } else if (editingIdSet.size > 0) {
+      els.monthlyMetricToolbarText.textContent = `已进入编辑 ${editingIdSet.size} 条，尚未产生待保存修改`;
+    } else {
+      els.monthlyMetricToolbarText.textContent = "未开始编辑";
+    }
+  }
+
+  if (els.saveAllMetricsBtn) {
+    els.saveAllMetricsBtn.disabled = dirtyIds.length === 0;
+  }
+
+  if (els.discardAllMetricsBtn) {
+    els.discardAllMetricsBtn.disabled = dirtyIds.length === 0 && editingIdSet.size === 0;
+  }
+
+  if (els.monthlyMetricFilters) {
+    const counts = {
+      all: updates.length,
+      dirty: dirtyIds.length,
+      manual: manualCount
+    };
+    const labels = {
+      all: "全部",
+      dirty: "待保存",
+      manual: "人工校正"
+    };
+
+    for (const button of Array.from(els.monthlyMetricFilters.querySelectorAll("[data-metric-filter]"))) {
+      const filter = String(button.getAttribute("data-metric-filter") || "").trim();
+      button.classList.toggle("is-active", state.monthlyMetricFilter === filter);
+      button.textContent = `${labels[filter] || filter} ${counts[filter] ?? 0}`;
+    }
+  }
+
+  return dirtyIds;
+}
+
+function getVisibleMonthlyUpdates(list, dirtyIdSet) {
+  const updates = Array.isArray(list) ? list : [];
+
+  if (state.monthlyMetricFilter === "dirty") {
+    return updates.filter((item) => dirtyIdSet.has(item.id));
+  }
+
+  if (state.monthlyMetricFilter === "manual") {
+    return updates.filter((item) => hasManualMetrics(item.manualMetrics));
+  }
+
+  return updates;
+}
+
+function getMonthlyMetricEmptyMessage() {
+  if (state.monthlyMetricFilter === "dirty") {
+    return "当前没有待保存的月度指标。";
+  }
+
+  if (state.monthlyMetricFilter === "manual") {
+    return "当前没有人工校正的月度指标。";
+  }
+
+  return "暂无可校正的月度指标。";
 }
 
 async function request(url, options = {}) {
@@ -492,6 +724,146 @@ function renderAnomalies() {
   els.anomalyRowsBody.innerHTML = rows;
 }
 
+function renderMonthlyMetrics() {
+  if (!els.monthlyMetricMeta || !els.monthlyMetricBody) {
+    return;
+  }
+
+  const list = Array.isArray(state.monthlyUpdates) ? state.monthlyUpdates : [];
+  const dirtyIds = syncMonthlyMetricToolbarState();
+  const dirtyIdSet = new Set(dirtyIds);
+  const editingIdSet = state.monthlyMetricEditingIds;
+  const visibleList = getVisibleMonthlyUpdates(list, dirtyIdSet);
+
+  if (list.length === 0) {
+    els.monthlyMetricMeta.textContent = "暂无";
+    els.monthlyMetricBody.innerHTML = `<tr><td colspan="7" class="empty">暂无可校正的月度指标。</td></tr>`;
+    return;
+  }
+
+  const manualCount = list.filter((item) => hasManualMetrics(item.manualMetrics)).length;
+  els.monthlyMetricMeta.textContent = `当前显示 ${visibleList.length} / 共 ${list.length} 个月份，人工校正 ${manualCount} 条`;
+
+  if (visibleList.length === 0) {
+    els.monthlyMetricBody.innerHTML = `<tr><td colspan="7" class="empty">${getMonthlyMetricEmptyMessage()}</td></tr>`;
+    return;
+  }
+
+  const rows = visibleList
+    .map((item) => {
+      const draft = getMonthlyMetricDraft(item);
+      const manualMetrics = hasManualMetrics(item.manualMetrics) ? item.manualMetrics : null;
+      const isEditing = editingIdSet.has(item.id);
+      const isDirty = dirtyIdSet.has(item.id);
+      const autoValues = {
+        netValueWan: Number.isFinite(Number(item.netValue)) ? Number(item.netValue) / 10_000 : null,
+        netIndex: Number.isFinite(Number(item.netIndex)) && Number(item.netIndex) > 0 ? Number(item.netIndex) : null,
+        yearStartNetIndex:
+          Number.isFinite(Number(item.yearStartNetIndex)) && Number(item.yearStartNetIndex) > 0
+            ? Number(item.yearStartNetIndex)
+            : null
+      };
+      let modeTag = `<span class="tag">自动</span>`;
+      if (manualMetrics) {
+        modeTag = `<span class="tag tag-fix">人工</span>`;
+      }
+      if (isEditing && !isDirty) {
+        modeTag = `<span class="tag tag-warn">编辑中</span>`;
+      }
+      if (isDirty) {
+        modeTag = `<span class="tag tag-edit">待保存</span>`;
+      }
+      const title = escapeHtml(item.title || "-");
+      const sourceLabel = escapeHtml(formatSourceLabel(item.source));
+      const link = item.link
+        ? `<a class="cell-link" href="${item.link}" target="_blank" rel="noreferrer">查看原帖</a>`
+        : "";
+      const actionButtons = isEditing
+        ? `
+            <button class="inline-btn inline-btn-primary" type="button" data-save-monthly-metrics="${escapeHtml(item.id)}">保存</button>
+            <button class="inline-btn" type="button" data-cancel-monthly-metrics="${escapeHtml(item.id)}">取消</button>
+            <button class="inline-btn" type="button" data-clear-monthly-metrics="${escapeHtml(item.id)}">恢复自动</button>
+          `
+        : `
+            <button class="inline-btn" type="button" data-edit-monthly-metrics="${escapeHtml(item.id)}">编辑</button>
+            ${
+              manualMetrics
+                ? `<button class="inline-btn" type="button" data-clear-monthly-metrics="${escapeHtml(item.id)}">恢复自动</button>`
+                : ""
+            }
+          `;
+
+      return `
+        <tr class="${isDirty ? "row-dirty" : ""}" data-monthly-update-id="${escapeHtml(item.id)}">
+          <td class="mono">${escapeHtml(item.month || monthLabelByDate(item.postedAt))}</td>
+          <td>
+            <div class="cell-stack">
+              <strong>${title}</strong>
+              <span class="cell-note">${sourceLabel} | ${formatDateTime(item.postedAt)} ${link}</span>
+            </div>
+          </td>
+          <td class="${isEditing ? "cell-editing" : ""}">
+            <div class="metric-editor">
+              <input
+                class="metric-input mono"
+                data-metric-field="netValueWan"
+                data-update-id="${escapeHtml(item.id)}"
+                type="number"
+                min="0"
+                step="0.01"
+                value="${escapeHtml(normalizeDraftFieldValue(draft?.netValueWan))}"
+                placeholder="输入人工值"
+                ${isEditing ? "" : "disabled"}
+              />
+              <span class="metric-hint">自动值：${escapeHtml(formatMetricHint(autoValues.netValueWan, 2))}</span>
+            </div>
+          </td>
+          <td class="${isEditing ? "cell-editing" : ""}">
+            <div class="metric-editor">
+              <input
+                class="metric-input mono"
+                data-metric-field="netIndex"
+                data-update-id="${escapeHtml(item.id)}"
+                type="number"
+                min="0"
+                step="0.0001"
+                value="${escapeHtml(normalizeDraftFieldValue(draft?.netIndex))}"
+                placeholder="输入人工值"
+                ${isEditing ? "" : "disabled"}
+              />
+              <span class="metric-hint">自动值：${escapeHtml(formatMetricHint(autoValues.netIndex, 4))}</span>
+            </div>
+          </td>
+          <td class="${isEditing ? "cell-editing" : ""}">
+            <div class="metric-editor">
+              <input
+                class="metric-input mono"
+                data-metric-field="yearStartNetIndex"
+                data-update-id="${escapeHtml(item.id)}"
+                type="number"
+                min="0"
+                step="0.0001"
+                value="${escapeHtml(normalizeDraftFieldValue(draft?.yearStartNetIndex))}"
+                placeholder="输入人工值"
+                ${isEditing ? "" : "disabled"}
+              />
+              <span class="metric-hint">自动值：${escapeHtml(formatMetricHint(autoValues.yearStartNetIndex, 4))}</span>
+            </div>
+          </td>
+          <td>${modeTag}</td>
+          <td>
+            <div class="metric-actions">
+              ${actionButtons}
+            </div>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  els.monthlyMetricBody.innerHTML = rows;
+}
+
 function renderAll() {
   renderForm();
   renderSnapshot();
@@ -499,18 +871,22 @@ function renderAll() {
   renderCatalog();
   renderSnapshotHistory();
   renderAnomalies();
+  renderMonthlyMetrics();
 }
 
 async function loadData() {
-  const [autoData, snapshotsData, anomalyData] = await Promise.all([
+  const [autoData, snapshotsData, anomalyData, monthlyData] = await Promise.all([
     request("/api/auto-tracking"),
     request("/api/master-snapshots?limit=240"),
-    request("/api/auto-tracking/anomalies")
+    request("/api/auto-tracking/anomalies"),
+    request("/api/monthly-updates")
   ]);
 
   state.autoTracking = autoData.autoTracking || null;
   state.latestSnapshot = autoData.latestSnapshot || null;
   state.snapshots = Array.isArray(snapshotsData.snapshots) ? snapshotsData.snapshots : [];
+  state.monthlyUpdates = Array.isArray(monthlyData.updates) ? monthlyData.updates : [];
+  reconcileMonthlyMetricUiState();
   state.anomalyReport = anomalyData || { summary: {}, snapshots: [] };
   state.anomalyRowsByKey = new Map();
 
@@ -777,6 +1153,215 @@ function handleViewLatestSnapshot() {
   renderSnapshotHistory();
 }
 
+function startMonthlyMetricEdit(updateId) {
+  const update = getMonthlyUpdateById(updateId);
+  if (!update) {
+    return;
+  }
+
+  setMonthlyMetricDraft(updateId, getMonthlyMetricDraft(update));
+  state.monthlyMetricEditingIds.add(updateId);
+  renderMonthlyMetrics();
+}
+
+function cancelMonthlyMetricEdit(updateId) {
+  clearMonthlyMetricDraft(updateId);
+  state.monthlyMetricEditingIds.delete(updateId);
+  renderMonthlyMetrics();
+}
+
+function updateMonthlyMetricDraftFromInput(target) {
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const updateId = String(target.dataset.updateId || "").trim();
+  const field = String(target.dataset.metricField || "").trim();
+  if (!updateId || !field) {
+    return;
+  }
+
+  const update = getMonthlyUpdateById(updateId);
+  if (!update) {
+    return;
+  }
+
+  const draft = {
+    ...getMonthlyMetricDraft(update),
+    [field]: normalizeDraftFieldValue(target.value)
+  };
+
+  setMonthlyMetricDraft(updateId, draft);
+}
+
+function buildMonthlyMetricPayload(updateId) {
+  const update = getMonthlyUpdateById(updateId);
+  const draft = update ? getMonthlyMetricDraft(update) : null;
+
+  return {
+    netValueWan: normalizeDraftFieldValue(draft?.netValueWan),
+    netIndex: normalizeDraftFieldValue(draft?.netIndex),
+    yearStartNetIndex: normalizeDraftFieldValue(draft?.yearStartNetIndex)
+  };
+}
+
+async function patchMonthlyMetrics(updateId, payload) {
+  return request(`/api/monthly-updates/${encodeURIComponent(updateId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function saveMonthlyMetrics(updateId) {
+  const update = getMonthlyUpdateById(updateId);
+  if (!update) {
+    setStatus("未找到对应的月度记录", "err");
+    return;
+  }
+
+  const payload = buildMonthlyMetricPayload(updateId);
+  const isDirty = isMonthlyMetricDraftDirty(update, payload);
+  if (!isDirty) {
+    state.monthlyMetricEditingIds.delete(updateId);
+    clearMonthlyMetricDraft(updateId);
+    renderMonthlyMetrics();
+    setStatus(`未检测到 ${update.month} 的修改`, "ok");
+    return;
+  }
+
+  try {
+    setStatus(`正在保存 ${update.month} 的月度指标...`, "info");
+    await patchMonthlyMetrics(updateId, payload);
+    state.monthlyMetricEditingIds.delete(updateId);
+    clearMonthlyMetricDraft(updateId);
+    await loadData();
+    const savedAllBlank = !payload.netValueWan && !payload.netIndex && !payload.yearStartNetIndex;
+    setStatus(savedAllBlank ? `已恢复 ${update.month} 的自动指标` : `已保存 ${update.month} 的月度指标`, "ok");
+  } catch (error) {
+    setStatus(`保存月度指标失败: ${error.message}`, "err");
+  }
+}
+
+async function saveAllMonthlyMetrics() {
+  const dirtyIds = getDirtyMonthlyMetricIds();
+  if (dirtyIds.length === 0) {
+    setStatus("当前没有待保存的月度指标修改", "ok");
+    return;
+  }
+
+  try {
+    setStatus(`正在批量保存 ${dirtyIds.length} 条月度指标...`, "info");
+    for (const updateId of dirtyIds) {
+      await patchMonthlyMetrics(updateId, buildMonthlyMetricPayload(updateId));
+      state.monthlyMetricEditingIds.delete(updateId);
+      clearMonthlyMetricDraft(updateId);
+    }
+    await loadData();
+    setStatus(`已批量保存 ${dirtyIds.length} 条月度指标`, "ok");
+  } catch (error) {
+    setStatus(`批量保存失败: ${error.message}`, "err");
+  }
+}
+
+function discardAllMonthlyMetricEdits() {
+  state.monthlyMetricDrafts.clear();
+  state.monthlyMetricEditingIds.clear();
+  renderMonthlyMetrics();
+  setStatus("已放弃全部未保存的月度指标编辑", "ok");
+}
+
+function setMonthlyMetricFilter(filter) {
+  const nextFilter = String(filter || "").trim();
+  if (!["all", "dirty", "manual"].includes(nextFilter)) {
+    return;
+  }
+
+  state.monthlyMetricFilter = nextFilter;
+  renderMonthlyMetrics();
+}
+
+async function clearMonthlyMetrics(updateId) {
+  const update = getMonthlyUpdateById(updateId);
+  if (!update) {
+    setStatus("未找到对应的月度记录", "err");
+    return;
+  }
+
+  try {
+    setStatus(`正在恢复 ${update.month} 的自动指标...`, "info");
+    await patchMonthlyMetrics(updateId, {
+      clearManualMetrics: true
+    });
+    state.monthlyMetricEditingIds.delete(updateId);
+    clearMonthlyMetricDraft(updateId);
+    await loadData();
+    setStatus(`已恢复 ${update.month} 的自动指标`, "ok");
+  } catch (error) {
+    setStatus(`恢复自动指标失败: ${error.message}`, "err");
+  }
+}
+
+function handleMonthlyMetricTableClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const editButton = target.closest("[data-edit-monthly-metrics]");
+  if (editButton) {
+    const updateId = String(editButton.getAttribute("data-edit-monthly-metrics") || "").trim();
+    if (updateId) {
+      startMonthlyMetricEdit(updateId);
+    }
+    return;
+  }
+
+  const saveButton = target.closest("[data-save-monthly-metrics]");
+  if (saveButton) {
+    const updateId = String(saveButton.getAttribute("data-save-monthly-metrics") || "").trim();
+    if (updateId) {
+      void saveMonthlyMetrics(updateId);
+    }
+    return;
+  }
+
+  const cancelButton = target.closest("[data-cancel-monthly-metrics]");
+  if (cancelButton) {
+    const updateId = String(cancelButton.getAttribute("data-cancel-monthly-metrics") || "").trim();
+    if (updateId) {
+      cancelMonthlyMetricEdit(updateId);
+    }
+    return;
+  }
+
+  const clearButton = target.closest("[data-clear-monthly-metrics]");
+  if (!clearButton) {
+    return;
+  }
+
+  const updateId = String(clearButton.getAttribute("data-clear-monthly-metrics") || "").trim();
+  if (updateId) {
+    void clearMonthlyMetrics(updateId);
+  }
+}
+
+function handleMonthlyMetricFilterClick(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const button = target.closest("[data-metric-filter]");
+  if (!button) {
+    return;
+  }
+
+  const filter = String(button.getAttribute("data-metric-filter") || "").trim();
+  if (filter) {
+    setMonthlyMetricFilter(filter);
+  }
+}
+
 function bindEvents() {
   if (els.autoConfigForm) {
     els.autoConfigForm.addEventListener("submit", handleSaveConfig);
@@ -816,6 +1401,32 @@ function bindEvents() {
 
   if (els.viewLatestBtn) {
     els.viewLatestBtn.addEventListener("click", handleViewLatestSnapshot);
+  }
+
+  if (els.monthlyMetricBody) {
+    els.monthlyMetricBody.addEventListener("click", handleMonthlyMetricTableClick);
+    els.monthlyMetricBody.addEventListener("input", (event) => {
+      updateMonthlyMetricDraftFromInput(event.target);
+      syncMonthlyMetricToolbarState();
+    });
+    els.monthlyMetricBody.addEventListener("change", (event) => {
+      updateMonthlyMetricDraftFromInput(event.target);
+      renderMonthlyMetrics();
+    });
+  }
+
+  if (els.saveAllMetricsBtn) {
+    els.saveAllMetricsBtn.addEventListener("click", () => {
+      void saveAllMonthlyMetrics();
+    });
+  }
+
+  if (els.discardAllMetricsBtn) {
+    els.discardAllMetricsBtn.addEventListener("click", discardAllMonthlyMetricEdits);
+  }
+
+  if (els.monthlyMetricFilters) {
+    els.monthlyMetricFilters.addEventListener("click", handleMonthlyMetricFilterClick);
   }
 }
 

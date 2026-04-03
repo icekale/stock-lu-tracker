@@ -11,7 +11,6 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY src ./src
 COPY public ./public
-COPY data ./data
 COPY eng.traineddata chi_sim.traineddata ./
 
 RUN mkdir -p /app/data && chown -R node:node /app

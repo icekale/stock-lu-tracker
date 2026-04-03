@@ -241,7 +241,45 @@
                 <th>当前值</th>
               </tr>
             </thead>
-            <tbody id="anomalyRowsBody"></tbody>
+          <tbody id="anomalyRowsBody"></tbody>
+        </table>
+      </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>月度指标校正</h2>
+          <p id="monthlyMetricMeta">载入中...</p>
+        </div>
+        <p class="table-note">使用方式：先点某一行“编辑”后再输入人工值；可逐行保存，也可在上方统一点“保存全部已修改”。想恢复自动抓取结果，点该行“恢复自动”。输入框下方会显示当前自动值。</p>
+        <div class="metrics-toolbar">
+          <div class="metrics-toolbar-main">
+            <p class="metrics-toolbar-text" id="monthlyMetricToolbarText">未开始编辑</p>
+            <div class="metrics-filter" id="monthlyMetricFilters">
+              <button class="filter-chip is-active" type="button" data-metric-filter="all">全部</button>
+              <button class="filter-chip" type="button" data-metric-filter="dirty">待保存</button>
+              <button class="filter-chip" type="button" data-metric-filter="manual">人工校正</button>
+            </div>
+          </div>
+          <div class="metrics-toolbar-actions">
+            <button class="btn primary" type="button" id="saveAllMetricsBtn">保存全部已修改</button>
+            <button class="btn" type="button" id="discardAllMetricsBtn">放弃全部编辑</button>
+          </div>
+        </div>
+        <div class="table-wrap short metrics-table">
+          <table>
+            <thead>
+              <tr>
+                <th>月份</th>
+                <th>标题 / 来源</th>
+                <th>累计净值(万)</th>
+                <th>净值指数</th>
+                <th>年初净值指数</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="monthlyMetricBody"></tbody>
           </table>
         </div>
       </section>

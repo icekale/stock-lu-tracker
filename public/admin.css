@@ -465,6 +465,68 @@ textarea {
   max-height: 380px;
 }
 
+.table-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.metrics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.metrics-toolbar-main {
+  display: grid;
+  gap: 10px;
+}
+
+.metrics-toolbar-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.metrics-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.8);
+  color: #464a55;
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.filter-chip:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+  background: #fff;
+}
+
+.filter-chip.is-active {
+  border-color: rgba(0, 113, 227, 0.18);
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--blue);
+}
+
+.metrics-toolbar-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 table {
   width: 100%;
   min-width: 930px;
@@ -551,6 +613,12 @@ tbody tr.row-anomaly:hover {
   color: #1f8d51;
 }
 
+.tag-edit {
+  border-color: rgba(0, 113, 227, 0.18);
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--blue);
+}
+
 .pos {
   color: var(--gain);
 }
@@ -580,6 +648,87 @@ tbody tr.row-anomaly:hover {
   border-color: rgba(0, 0, 0, 0.26);
 }
 
+.inline-btn-primary {
+  border-color: transparent;
+  background: linear-gradient(180deg, var(--blue-hover), var(--blue));
+  color: #fff;
+}
+
+.metrics-table table {
+  min-width: 980px;
+}
+
+.metric-input {
+  min-width: 108px;
+  width: 100%;
+}
+
+.metric-input:disabled {
+  background: linear-gradient(180deg, #f6f7f9, #f2f3f6);
+  color: #646972;
+  cursor: default;
+}
+
+.metric-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.metric-hint {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.metric-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metrics-table tbody tr.row-dirty {
+  background: rgba(0, 113, 227, 0.08);
+}
+
+.metrics-table tbody tr.row-dirty:hover {
+  background: rgba(0, 113, 227, 0.12);
+}
+
+.metrics-table tbody tr.row-dirty td {
+  background: rgba(233, 244, 255, 0.86);
+}
+
+.metrics-table tbody tr.row-dirty td:first-child {
+  box-shadow: inset 4px 0 0 var(--blue);
+  font-weight: 600;
+}
+
+.cell-editing {
+  background: rgba(0, 113, 227, 0.03);
+}
+
+.metrics-table th:last-child,
+.metrics-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #fbfbfd;
+  box-shadow: -12px 0 18px rgba(15, 23, 42, 0.06);
+}
+
+.metrics-table th:last-child {
+  z-index: 3;
+  background: #f7f7fa;
+}
+
+.metrics-table tbody tr:hover td:last-child {
+  background: #fff;
+}
+
+.metrics-table tbody tr.row-dirty td:last-child {
+  background: #eef6ff;
+}
+
 .cell-stack {
   display: grid;
   gap: 4px;
@@ -589,6 +738,15 @@ tbody tr.row-anomaly:hover {
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.35;
+}
+
+.cell-link {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.cell-link:hover {
+  text-decoration: underline;
 }
 
 .config-shell {
@@ -637,6 +795,15 @@ tbody tr.row-anomaly:hover {
 }
 
 @media (max-width: 940px) {
+  .metrics-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .metrics-toolbar-main {
+    width: 100%;
+  }
+
   .hero {
     grid-template-columns: 1fr;
     align-items: start;
