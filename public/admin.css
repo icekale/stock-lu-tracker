@@ -514,6 +514,14 @@ tbody tr.row-selected:hover {
   background: rgba(0, 113, 227, 0.15);
 }
 
+tbody tr.row-anomaly {
+  background: rgba(217, 40, 40, 0.06);
+}
+
+tbody tr.row-anomaly:hover {
+  background: rgba(217, 40, 40, 0.1);
+}
+
 .mono {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
@@ -529,6 +537,18 @@ tbody tr.row-selected:hover {
   padding: 2px 9px;
   font-size: 0.73rem;
   color: #454a53;
+}
+
+.tag-warn {
+  border-color: rgba(201, 120, 0, 0.18);
+  background: #fff3dc;
+  color: #a95d00;
+}
+
+.tag-fix {
+  border-color: rgba(31, 157, 85, 0.18);
+  background: #e5f8ed;
+  color: #1f8d51;
 }
 
 .pos {
@@ -558,6 +578,17 @@ tbody tr.row-selected:hover {
 
 .inline-btn:hover {
   border-color: rgba(0, 0, 0, 0.26);
+}
+
+.cell-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.cell-note {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
 }
 
 .config-shell {

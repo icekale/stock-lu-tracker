@@ -46,6 +46,12 @@ async function request(url, options = {}) {
 }
 
 function toNumber(value) {
+  if (value === null || typeof value === "undefined") {
+    return null;
+  }
+  if (typeof value === "string" && value.trim() === "") {
+    return null;
+  }
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }

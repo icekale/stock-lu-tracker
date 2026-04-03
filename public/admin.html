@@ -48,8 +48,25 @@
             </select>
           </label>
           <label>
+            OCR 引擎
+            <select name="ocrProvider">
+              <option value="auto">自动（有 Qwen Key 时优先）</option>
+              <option value="qwen">Qwen OCR 优先</option>
+              <option value="local">本地 Tesseract</option>
+            </select>
+          </label>
+          <label>
             每条帖子最多识别图片数
             <input name="ocrMaxImagesPerPost" type="number" min="1" max="5" value="1" />
+          </label>
+          <label class="full-row">
+            Qwen OCR API Key
+            <input
+              name="qwenApiKey"
+              type="password"
+              autocomplete="off"
+              placeholder="留空则保持已保存值，或读取环境变量 DASHSCOPE_API_KEY"
+            />
           </label>
           <label class="full-row">
             置顶帖子链接（每行一条，优先抓取）
@@ -94,7 +111,7 @@
 
           <label class="full-row">
             说明
-            <input value="Cookie 仅本地保存，用于自动抓取超级鹿鼎公持仓帖子" readonly />
+            <input value="Cookie / Qwen Key 仅本地保存，用于自动抓取超级鹿鼎公持仓帖子" readonly />
           </label>
 
           <div class="full-row inline-actions">
@@ -103,6 +120,7 @@
             <button class="btn" type="button" id="runBackfillBtn">回溯历史标题帖子</button>
             <button class="btn" type="button" id="loadCatalogBtn">抓取全部月份目录</button>
             <button class="btn primary" type="button" id="importSelectedBtn">导入选中月份</button>
+            <button class="btn" type="button" id="recalculateSnapshotsBtn">重算快照字段</button>
             <a class="btn btn-link" href="/">返回主页看板</a>
           </div>
           <p class="inline-status full-row config-status" id="autoSyncText">等待首次自动抓取</p>
@@ -205,6 +223,27 @@
             </table>
           </div>
         </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>异常快照检查</h2>
+          <p id="anomalyMeta">载入中...</p>
+        </div>
+        <div class="table-wrap short">
+          <table>
+            <thead>
+              <tr>
+                <th>月份</th>
+                <th>证券</th>
+                <th>自动修正</th>
+                <th>仍需复核</th>
+                <th>当前值</th>
+              </tr>
+            </thead>
+            <tbody id="anomalyRowsBody"></tbody>
+          </table>
+        </div>
       </section>
     </main>
 

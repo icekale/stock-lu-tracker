@@ -291,13 +291,14 @@ function buildState(store) {
   const portfolio = buildPortfolio(store.trades, store.quotes);
   const monthlyStatus = buildMonthlyStatus(store.monthlyUpdates || []);
   const autoTracking = ensureAutoTrackingState(store);
+  const latestMasterSnapshot = sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null);
 
   return {
     summary: portfolio.summary,
     positions: portfolio.positions,
     monthlyStatus,
     autoTracking: getAutoTrackingPublic(autoTracking),
-    latestMasterSnapshot: autoTracking.latestSnapshot || null
+    latestMasterSnapshot
   };
 }
 
@@ -398,9 +399,386 @@ function normalizeSourceSymbol(rawSymbol) {
   return null;
 }
 
+function toFiniteNumber(value) {
+  if (value === null || typeof value === "undefined") {
+    return null;
+  }
+  if (typeof value === "string" && value.trim() === "") {
+    return null;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function toPositiveNumber(value) {
+  const number = toFiniteNumber(value);
+  return number !== null && number > 0 ? number : null;
+}
+
+function roundNumeric(value, digits = 3) {
+  const number = toFiniteNumber(value);
+  if (number === null) {
+    return null;
+  }
+  const factor = 10 ** digits;
+  return Math.round(number * factor) / factor;
+}
+
+function numericGap(left, right) {
+  const a = toFiniteNumber(left);
+  const b = toFiniteNumber(right);
+  if (a === null || b === null) {
+    return null;
+  }
+  return Math.abs(a - b) / Math.max(Math.abs(b), 1);
+}
+
+function hasMaterialNumberChange(before, after, absThreshold = 0.01, ratioThreshold = 0.005) {
+  const left = toFiniteNumber(before);
+  const right = toFiniteNumber(after);
+  if (left === null && right === null) {
+    return false;
+  }
+  if (left === null || right === null) {
+    return true;
+  }
+  const diff = Math.abs(left - right);
+  if (diff <= absThreshold) {
+    return false;
+  }
+  return diff / Math.max(Math.abs(right), 1) > ratioThreshold;
+}
+
+function normalizeSnapshotMarketNameLabel(rawSymbol, marketName) {
+  const normalized = normalizeSourceSymbol(rawSymbol);
+  const text = String(marketName || "")
+    .replace(/[+\-]?\d[\d,]*(?:\.\d+)?/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+
+  if (text.includes("港")) {
+    return "港股通";
+  }
+  if (text.includes("深")) {
+    return "深圳A股";
+  }
+  if (text.includes("上")) {
+    return "上海A股";
+  }
+
+  if (!normalized) {
+    return text;
+  }
+
+  if (normalized.market === "HK") {
+    return "港股通";
+  }
+  if (normalized.market === "CN") {
+    return /^[569]/.test(normalized.symbol) ? "上海A股" : "深圳A股";
+  }
+
+  return text;
+}
+
+function getSnapshotHoldingQty(row) {
+  const candidates = [row?.holdingQty, row?.balanceQty, row?.availableQty, row?.changeQty]
+    .map((item) => toPositiveNumber(item))
+    .filter((item) => item !== null);
+
+  if (candidates.length === 0) {
+    return 0;
+  }
+
+  return Math.max(...candidates);
+}
+
+function buildKnownFixedSnapshotRows(snapshot) {
+  const rows = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
+
+  if (snapshot?.postId !== "xq:349905429") {
+    return rows;
+  }
+
+  const hkShenhuaMatcher = (row) => {
+    const symbol = String(row?.symbol || "").trim();
+    const name = String(row?.name || "").trim();
+    return name === "中国神华" && (symbol === "01068" || symbol === "01088");
+  };
+
+  const firstMatchIndex = rows.findIndex(hkShenhuaMatcher);
+  if (firstMatchIndex < 0) {
+    return rows;
+  }
+
+  const normalizedRows = rows.filter((row) => !hkShenhuaMatcher(row));
+  normalizedRows.splice(firstMatchIndex, 0, {
+    actionLabel: "持仓快照",
+    action: "HOLD",
+    symbol: "01088",
+    name: "中国神华",
+    changeQty: 20000,
+    latestCost: null,
+    holdingQty: 20000,
+    balanceQty: 20000,
+    availableQty: 20000,
+    referenceCost: null,
+    latestPrice: 32.0285,
+    referenceHoldingCost: null,
+    marketValue: 640570,
+    floatingPnl: null,
+    pnlPct: null,
+    marketName: "港股通"
+  });
+
+  return normalizedRows;
+}
+
+function shouldDropSanitizedSnapshotRow(row) {
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+
+  return String(row.action || "HOLD").toUpperCase() === "HOLD" && getSnapshotHoldingQty(row) <= 0;
+}
+
+function sanitizeMasterSnapshotRow(row) {
+  if (!row || typeof row !== "object") {
+    return row;
+  }
+
+  const action = String(row.action || "HOLD").toUpperCase();
+  const output = {
+    ...row,
+    marketName: normalizeSnapshotMarketNameLabel(row.symbol, row.marketName)
+  };
+
+  if (action !== "HOLD") {
+    return output;
+  }
+
+  const holdingQty = getSnapshotHoldingQty(row);
+  let referenceCost = toFiniteNumber(row.referenceCost ?? row.latestCost);
+  let latestPrice = toPositiveNumber(row.latestPrice);
+  let marketValue = toPositiveNumber(row.marketValue);
+  let referenceHoldingCost = toFiniteNumber(row.referenceHoldingCost);
+  let floatingPnl = toFiniteNumber(row.floatingPnl);
+  let pnlPct = toFiniteNumber(row.pnlPct);
+
+  if (holdingQty > 0) {
+    output.changeQty = holdingQty;
+    output.holdingQty = holdingQty;
+    output.balanceQty = holdingQty;
+    output.availableQty = holdingQty;
+  }
+
+  if (holdingQty > 0 && referenceCost !== null) {
+    const derivedHoldingCost = holdingQty * referenceCost;
+    const gap = numericGap(referenceHoldingCost, derivedHoldingCost);
+    if (
+      referenceHoldingCost === null ||
+      Math.abs(referenceHoldingCost) < 1 ||
+      (gap !== null && gap > 0.12 && Math.sign(referenceHoldingCost || 0) === Math.sign(derivedHoldingCost || 0))
+    ) {
+      referenceHoldingCost = derivedHoldingCost;
+    }
+  }
+
+  if (holdingQty > 0 && marketValue !== null) {
+    const derivedLatestPrice = marketValue / holdingQty;
+    if (latestPrice === null) {
+      latestPrice = derivedLatestPrice;
+    } else {
+      const gap = numericGap(latestPrice, derivedLatestPrice);
+      if (gap !== null && gap > 0.12) {
+        latestPrice = derivedLatestPrice;
+      }
+    }
+  } else if (holdingQty > 0 && latestPrice !== null) {
+    marketValue = holdingQty * latestPrice;
+  }
+
+  if (referenceHoldingCost !== null && referenceHoldingCost > 0 && marketValue !== null) {
+    const derivedFloatingPnl = marketValue - referenceHoldingCost;
+    if (
+      floatingPnl === null ||
+      Math.abs(floatingPnl - derivedFloatingPnl) > Math.max(100, Math.abs(derivedFloatingPnl) * 0.08)
+    ) {
+      floatingPnl = derivedFloatingPnl;
+    }
+
+    const derivedPnlPct = derivedFloatingPnl / referenceHoldingCost * 100;
+    if (
+      pnlPct === null ||
+      Math.abs(pnlPct) > 1000 ||
+      Math.abs(pnlPct - derivedPnlPct) > Math.max(3, Math.abs(derivedPnlPct) * 0.12)
+    ) {
+      pnlPct = derivedPnlPct;
+    }
+  }
+
+  if (referenceHoldingCost !== null && referenceHoldingCost <= 0) {
+    floatingPnl = null;
+    if (pnlPct !== null && Math.abs(pnlPct) > 500) {
+      pnlPct = null;
+    }
+  }
+
+  if (referenceCost !== null) {
+    output.referenceCost = roundNumeric(referenceCost, 6);
+    output.latestCost = roundNumeric(referenceCost, 6);
+  }
+  if (latestPrice !== null) {
+    output.latestPrice = roundNumeric(latestPrice, 6);
+  }
+  if (marketValue !== null) {
+    output.marketValue = roundNumeric(marketValue, 2);
+  }
+  if (referenceHoldingCost !== null) {
+    output.referenceHoldingCost = roundNumeric(referenceHoldingCost, 2);
+  }
+  output.floatingPnl = floatingPnl === null ? null : roundNumeric(floatingPnl, 2);
+  output.pnlPct = pnlPct === null ? null : roundNumeric(pnlPct, 3);
+
+  return output;
+}
+
+function buildSnapshotRowFixes(rawRow, sanitizedRow) {
+  const fixes = [];
+  if (String(rawRow?.marketName || "").trim() !== String(sanitizedRow?.marketName || "").trim()) {
+    fixes.push("市场字段已归一化");
+  }
+  if (hasMaterialNumberChange(rawRow?.latestPrice, sanitizedRow?.latestPrice)) {
+    fixes.push("最新价已按市值重算");
+  }
+  if (hasMaterialNumberChange(rawRow?.referenceHoldingCost, sanitizedRow?.referenceHoldingCost, 1, 0.01)) {
+    fixes.push("持仓成本已重算");
+  }
+  if (hasMaterialNumberChange(rawRow?.floatingPnl, sanitizedRow?.floatingPnl, 1, 0.01)) {
+    fixes.push("浮动盈亏已重算");
+  }
+  if (hasMaterialNumberChange(rawRow?.pnlPct, sanitizedRow?.pnlPct, 0.1, 0.01)) {
+    fixes.push("盈亏比例已重算");
+  }
+  return fixes;
+}
+
+function buildSnapshotRowIssues(row) {
+  const issues = [];
+  const holdingQty = getSnapshotHoldingQty(row);
+  const referenceCost = toFiniteNumber(row?.referenceCost ?? row?.latestCost);
+  const latestPrice = toPositiveNumber(row?.latestPrice);
+  const marketValue = toPositiveNumber(row?.marketValue);
+  const referenceHoldingCost = toFiniteNumber(row?.referenceHoldingCost);
+  const floatingPnl = toFiniteNumber(row?.floatingPnl);
+  const pnlPct = toFiniteNumber(row?.pnlPct);
+  const marketName = String(row?.marketName || "").trim();
+
+  if (holdingQty <= 0) {
+    issues.push("持仓股数缺失");
+  }
+  if (marketValue === null) {
+    issues.push("市值缺失");
+  }
+  if (!marketName) {
+    issues.push("市场字段缺失");
+  }
+
+  if (holdingQty > 0 && latestPrice !== null && marketValue !== null) {
+    const priceGap = numericGap(marketValue, holdingQty * latestPrice);
+    if (priceGap !== null && priceGap > 0.12) {
+      issues.push("最新价与市值不一致");
+    }
+  }
+
+  if (holdingQty > 0 && referenceCost !== null && referenceHoldingCost !== null && referenceHoldingCost > 0) {
+    const costGap = numericGap(referenceHoldingCost, holdingQty * referenceCost);
+    if (costGap !== null && costGap > 0.12) {
+      issues.push("持仓成本与成本价不一致");
+    }
+  }
+
+  if (referenceHoldingCost !== null && referenceHoldingCost > 0 && marketValue !== null) {
+    const derivedFloatingPnl = marketValue - referenceHoldingCost;
+    if (
+      floatingPnl !== null &&
+      Math.abs(floatingPnl - derivedFloatingPnl) > Math.max(100, Math.abs(derivedFloatingPnl) * 0.08)
+    ) {
+      issues.push("浮动盈亏仍需复核");
+    }
+
+    const derivedPnlPct = derivedFloatingPnl / referenceHoldingCost * 100;
+    if (pnlPct !== null && Math.abs(pnlPct - derivedPnlPct) > Math.max(3, Math.abs(derivedPnlPct) * 0.12)) {
+      issues.push("盈亏比例仍需复核");
+    }
+  }
+
+  return issues;
+}
+
+function sanitizeMasterSnapshotRecord(snapshot, options = {}) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+
+  const includeDiagnostics = Boolean(options.includeDiagnostics);
+  const rows = buildKnownFixedSnapshotRows(snapshot);
+  let changedRowCount = 0;
+  let issueRowCount = 0;
+
+  const sanitizedRows = rows.flatMap((row) => {
+    const sanitizedRow = sanitizeMasterSnapshotRow(row);
+
+    if (shouldDropSanitizedSnapshotRow(sanitizedRow)) {
+      changedRowCount += 1;
+      return [];
+    }
+
+    const fixes = buildSnapshotRowFixes(row, sanitizedRow);
+    const issues = buildSnapshotRowIssues(sanitizedRow);
+
+    if (fixes.length > 0) {
+      changedRowCount += 1;
+    }
+    if (issues.length > 0) {
+      issueRowCount += 1;
+    }
+
+    if (!includeDiagnostics) {
+      return sanitizedRow;
+    }
+
+    return {
+      ...sanitizedRow,
+      diagnostics:
+        fixes.length > 0 || issues.length > 0
+          ? {
+              fixes,
+              issues,
+              level: issues.length > 0 ? "warn" : "fix"
+            }
+          : null
+    };
+  });
+
+  return {
+    ...snapshot,
+    rows: sanitizedRows,
+    anomalySummary: {
+      rowCount: sanitizedRows.length,
+      changedRowCount,
+      issueRowCount
+    }
+  };
+}
+
+function sanitizeSnapshotCollection(snapshots, options = {}) {
+  return (Array.isArray(snapshots) ? snapshots : []).map((snapshot) => sanitizeMasterSnapshotRecord(snapshot, options));
+}
+
 function getAutoTrackingPublic(autoTrackingInput) {
   const autoTracking = autoTrackingInput || {};
   const config = mergeAutoTrackingConfig(autoTracking.config || {});
+  const latestSnapshot = autoTracking.latestSnapshot ? sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot) : null;
 
   return {
     config: {
@@ -408,17 +786,19 @@ function getAutoTrackingPublic(autoTrackingInput) {
       intervalMinutes: config.intervalMinutes,
       maxPostsPerSource: config.maxPostsPerSource,
       ocrEnabled: Boolean(config.ocrEnabled),
+      ocrProvider: config.ocrProvider,
       ocrMaxImagesPerPost: config.ocrMaxImagesPerPost,
       pinnedPostUrls: config.pinnedPostUrls,
       xueqiuTitleRegex: config.xueqiuTitleRegex,
       backfillMaxPages: config.backfillMaxPages,
       backfillPageSize: config.backfillPageSize,
       keywords: config.keywords,
+      hasQwenApiKey: Boolean(config.qwenApiKey) || Boolean(process.env.DASHSCOPE_API_KEY),
       hasXueqiuCookie: Boolean(config.xueqiuCookie) && !isSampleCookie(config.xueqiuCookie),
       hasWeiboCookie: Boolean(config.weiboCookie) && !isSampleCookie(config.weiboCookie)
     },
     runtime: autoTracking.runtime || {},
-    latestSnapshot: autoTracking.latestSnapshot || null,
+    latestSnapshot,
     recentLogs: Array.isArray(autoTracking.logs) ? autoTracking.logs.slice(0, 30) : []
   };
 }
@@ -478,6 +858,8 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
     const before = await readStore();
     const autoTrackingBefore = ensureAutoTrackingState(before);
     const config = mergeAutoTrackingConfig(autoTrackingBefore.config);
+    const forceRefresh = Boolean(collectOptions.forceRefresh);
+    const selectedPostIds = new Set(normalizePostIds(collectOptions.targetPostIds));
 
     if (!config.enabled && trigger === "timer") {
       return {
@@ -489,7 +871,7 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
 
     const syncResult = await collectSuperLudinggongSnapshots(
       config,
-      autoTrackingBefore.processedPostIds || [],
+      forceRefresh ? [] : autoTrackingBefore.processedPostIds || [],
       collectOptions
     );
 
@@ -505,7 +887,9 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
       appendAutoTrackingLogs(autoTracking, syncResult.logs);
 
       for (const snapshot of syncResult.snapshots) {
-        if (processedPostIds.has(snapshot.postId)) {
+        const sanitizedSnapshot = sanitizeMasterSnapshotRecord(snapshot);
+        const shouldRefreshSnapshot = forceRefresh && selectedPostIds.has(snapshot.postId);
+        if (processedPostIds.has(sanitizedSnapshot.postId) && !shouldRefreshSnapshot) {
           skippedSnapshots += 1;
           continue;
         }
@@ -568,40 +952,50 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
           importedTradesInSnapshot += 1;
         }
 
-        const month = toMonthKey(snapshot.postedAt);
-        const monthKey = `${snapshot.source}:${snapshot.postId}`;
-        const hasMonthUpdate = draft.monthlyUpdates.some((item) => item.id === monthKey);
+        const month = toMonthKey(sanitizedSnapshot.postedAt);
+        const monthKey = `${sanitizedSnapshot.source}:${sanitizedSnapshot.postId}`;
+        const existingMonthIndex = draft.monthlyUpdates.findIndex((item) => item.id === monthKey);
+        const notePrefix = shouldRefreshSnapshot || existingMonthIndex >= 0 ? "自动重抓" : "自动抓取";
+        const nextMonthRecord = {
+          ...(existingMonthIndex >= 0 ? draft.monthlyUpdates[existingMonthIndex] : {}),
+          id: monthKey,
+          month,
+          source: sanitizedSnapshot.source,
+          postedAt: sanitizedSnapshot.postedAt,
+          note: `${notePrefix}: ${sanitizedSnapshot.rows.length} 行`,
+          createdAt:
+            existingMonthIndex >= 0 ? draft.monthlyUpdates[existingMonthIndex].createdAt : new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
 
-        if (!hasMonthUpdate) {
-          draft.monthlyUpdates.push({
-            id: monthKey,
-            month,
-            source: snapshot.source,
-            postedAt: snapshot.postedAt,
-            note: `自动抓取: ${snapshot.rows.length} 行`,
-            createdAt: new Date().toISOString()
-          });
+        if (existingMonthIndex >= 0) {
+          draft.monthlyUpdates[existingMonthIndex] = nextMonthRecord;
+        } else {
+          draft.monthlyUpdates.push(nextMonthRecord);
         }
 
         const latestSnapshotRecord = {
           id: randomUUID(),
-          postId: snapshot.postId,
-          source: snapshot.source,
-          postedAt: snapshot.postedAt,
-          link: snapshot.link,
-          title: snapshot.title || "",
-          rows: snapshot.rows,
-          rawText: snapshot.rawText,
-          ocrText: snapshot.ocrText,
-          images: snapshot.images,
+          postId: sanitizedSnapshot.postId,
+          source: sanitizedSnapshot.source,
+          postedAt: sanitizedSnapshot.postedAt,
+          link: sanitizedSnapshot.link,
+          title: sanitizedSnapshot.title || "",
+          rows: sanitizedSnapshot.rows,
+          rawText: sanitizedSnapshot.rawText,
+          ocrText: sanitizedSnapshot.ocrText,
+          images: sanitizedSnapshot.images,
           importedTrades: importedTradesInSnapshot,
           createdAt: new Date().toISOString()
         };
 
-        draft.masterSnapshots = [latestSnapshotRecord, ...(draft.masterSnapshots || [])].slice(0, 200);
+        draft.masterSnapshots = [
+          latestSnapshotRecord,
+          ...(draft.masterSnapshots || []).filter((item) => item.postId !== sanitizedSnapshot.postId)
+        ].slice(0, 200);
         autoTracking.latestSnapshot = latestSnapshotRecord;
 
-        processedPostIds.add(snapshot.postId);
+        processedPostIds.add(sanitizedSnapshot.postId);
         importedSnapshots += 1;
       }
 
@@ -966,7 +1360,7 @@ app.get("/api/auto-tracking", async (_req, res, next) => {
   try {
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
-    const latestSnapshot = autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null;
+    const latestSnapshot = sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null);
 
     res.json({
       autoTracking: getAutoTrackingPublic(autoTracking),
@@ -1002,6 +1396,10 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
 
       if (typeof payload.ocrEnabled !== "undefined") {
         patch.ocrEnabled = Boolean(payload.ocrEnabled);
+      }
+
+      if (typeof payload.ocrProvider !== "undefined") {
+        patch.ocrProvider = String(payload.ocrProvider || "").trim();
       }
 
       if (typeof payload.ocrMaxImagesPerPost !== "undefined") {
@@ -1046,6 +1444,10 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
         patch.weiboCookie = payload.weiboCookie.trim();
       }
 
+      if (typeof payload.qwenApiKey === "string") {
+        patch.qwenApiKey = payload.qwenApiKey.trim();
+      }
+
       autoTracking.config = mergeAutoTrackingConfig(patch);
     });
 
@@ -1072,7 +1474,7 @@ app.post("/api/auto-tracking/run", async (_req, res, next) => {
     res.json({
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
-      latestSnapshot: autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null
+      latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
     next(error);
@@ -1104,7 +1506,7 @@ app.post("/api/auto-tracking/backfill", async (req, res, next) => {
     res.json({
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
-      latestSnapshot: autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null
+      latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
     next(error);
@@ -1172,6 +1574,7 @@ app.post("/api/auto-tracking/import-selected", async (req, res, next) => {
     const result = await runAutoTrackingJob("import_selected", {
       mode: "backfill",
       targetPostIds: postIds,
+      forceRefresh: true,
       backfillPages: pages,
       backfillPageSize: pageSize
     });
@@ -1183,7 +1586,104 @@ app.post("/api/auto-tracking/import-selected", async (req, res, next) => {
       result,
       selectedCount: postIds.length,
       autoTracking: getAutoTrackingPublic(autoTracking),
-      latestSnapshot: autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null
+      latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/auto-tracking/anomalies", async (_req, res, next) => {
+  try {
+    const store = await readStore();
+    const snapshots = sanitizeSnapshotCollection(store.masterSnapshots || [], { includeDiagnostics: true })
+      .map((snapshot) => ({
+        ...snapshot,
+        rows: snapshot.rows.filter(
+          (row) => row.diagnostics && (row.diagnostics.fixes.length > 0 || row.diagnostics.issues.length > 0)
+        )
+      }))
+      .filter((snapshot) => snapshot.rows.length > 0);
+
+    const summary = snapshots.reduce(
+      (acc, snapshot) => {
+        acc.snapshotCount += 1;
+        acc.rowCount += snapshot.rows.length;
+        acc.changedRowCount += Number(snapshot.anomalySummary?.changedRowCount) || 0;
+        acc.issueRowCount += Number(snapshot.anomalySummary?.issueRowCount) || 0;
+        return acc;
+      },
+      {
+        snapshotCount: 0,
+        rowCount: 0,
+        changedRowCount: 0,
+        issueRowCount: 0
+      }
+    );
+
+    res.json({
+      summary,
+      snapshots
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auto-tracking/recalculate-snapshots", async (_req, res, next) => {
+  try {
+    let summary = {
+      snapshotCount: 0,
+      changedSnapshotCount: 0,
+      changedRowCount: 0,
+      issueRowCount: 0
+    };
+
+    await mutateStore((draft) => {
+      const autoTracking = ensureAutoTrackingState(draft);
+      const nextSnapshots = [];
+
+      for (const snapshot of draft.masterSnapshots || []) {
+        const sanitized = sanitizeMasterSnapshotRecord(snapshot, { includeDiagnostics: true });
+        const cleanRows = sanitized.rows.map((row) => {
+          const { diagnostics, ...rest } = row;
+          return rest;
+        });
+        const changed = JSON.stringify(snapshot.rows || []) !== JSON.stringify(cleanRows);
+
+        summary.snapshotCount += 1;
+        summary.changedRowCount += cleanRows.reduce((count, _row, index) => {
+          const diagnostics = sanitized.rows[index]?.diagnostics;
+          return count + (diagnostics && diagnostics.fixes.length > 0 ? 1 : 0);
+        }, 0);
+        summary.issueRowCount += cleanRows.reduce((count, _row, index) => {
+          const diagnostics = sanitized.rows[index]?.diagnostics;
+          return count + (diagnostics && diagnostics.issues.length > 0 ? 1 : 0);
+        }, 0);
+
+        if (changed) {
+          summary.changedSnapshotCount += 1;
+        }
+
+        nextSnapshots.push({
+          ...snapshot,
+          rows: cleanRows,
+          updatedAt: changed ? new Date().toISOString() : snapshot.updatedAt || snapshot.createdAt || new Date().toISOString()
+        });
+      }
+
+      draft.masterSnapshots = sortByRecentDate(nextSnapshots, "postedAt").slice(0, 200);
+      autoTracking.latestSnapshot = draft.masterSnapshots[0] || null;
+    });
+
+    const store = await readStore();
+    const autoTracking = ensureAutoTrackingState(store);
+
+    res.json({
+      ok: true,
+      summary,
+      autoTracking: getAutoTrackingPublic(autoTracking),
+      latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
     next(error);
@@ -1194,7 +1694,7 @@ app.get("/api/master-snapshots", async (req, res, next) => {
   try {
     const limit = Math.max(1, Math.min(240, Number(req.query.limit) || 10));
     const store = await readStore();
-    const snapshots = (store.masterSnapshots || []).slice(0, limit);
+    const snapshots = sanitizeSnapshotCollection((store.masterSnapshots || []).slice(0, limit));
 
     res.json({ snapshots });
   } catch (error) {
