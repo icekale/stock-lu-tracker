@@ -1,7 +1,12 @@
+const SYMBOL_NAME_OVERRIDES = Object.freeze({
+  "00700": "腾讯控股"
+});
+
 function cleanRawSymbol(raw) {
   return String(raw || "")
     .trim()
     .toUpperCase()
+    .replace(/\.(SS|SH|SZ|HK)$/, "")
     .replace(/^SH/, "")
     .replace(/^SZ/, "")
     .replace(/^HK/, "");
@@ -60,9 +65,34 @@ function normalizeMarket(rawSymbol, marketInput) {
   return inferMarket(rawSymbol);
 }
 
+function cleanSecurityName(rawName) {
+  return String(rawName || "")
+    .replace(/[\s|｜]+/g, " ")
+    .trim();
+}
+
+function normalizeSecurityName(rawSymbol, rawName, marketInput) {
+  const market = normalizeMarket(rawSymbol, marketInput);
+  const normalizedSymbol = cleanRawSymbol(toApiSymbol(rawSymbol, market) || rawSymbol);
+
+  if (normalizedSymbol && SYMBOL_NAME_OVERRIDES[normalizedSymbol]) {
+    return SYMBOL_NAME_OVERRIDES[normalizedSymbol];
+  }
+
+  const cleanedName = cleanSecurityName(rawName);
+  const compactName = cleanedName.replace(/\s+/g, "");
+
+  if (/^时(?:暑)?讯控股$/.test(compactName) || /^腾[讯汛迅]控股$/.test(compactName)) {
+    return "腾讯控股";
+  }
+
+  return cleanedName;
+}
+
 module.exports = {
   inferMarket,
   toApiSymbol,
   normalizeMarket,
-  cleanRawSymbol
+  cleanRawSymbol,
+  normalizeSecurityName
 };

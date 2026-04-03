@@ -246,6 +246,32 @@ body.replica-body {
   border-bottom: 0;
 }
 
+.market-group-row td {
+  padding: 0;
+  border-bottom: 1px solid #e8edf6;
+  background: #f9fbff;
+}
+
+.market-group-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+}
+
+.market-group-label {
+  color: #4f5f78;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.market-group-count {
+  color: #8d96a4;
+  font-size: 12px;
+}
+
 .stock-name {
   color: #2cb8ef;
   text-decoration: none;
@@ -434,6 +460,10 @@ body.replica-body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .market-group-cell {
+    padding: 7px 8px;
   }
 
   .replica-table.adjust-table th:nth-child(5),

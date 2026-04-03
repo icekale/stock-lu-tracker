@@ -5,6 +5,7 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 
 const { createWorker } = require("tesseract.js");
+const { normalizeSecurityName } = require("./symbols");
 
 const XUEQIU_UID = "8790885129";
 const WEIBO_UID = "3962719063";
@@ -783,7 +784,7 @@ function normalizeSnapshotNameBySymbol(symbol, value) {
   if (normalizedSymbol && SNAPSHOT_NAME_OVERRIDES[normalizedSymbol]) {
     return SNAPSHOT_NAME_OVERRIDES[normalizedSymbol];
   }
-  return sanitizeName(value);
+  return normalizeSecurityName(normalizedSymbol || symbol, sanitizeName(value));
 }
 
 function inferCnMarketName(symbol) {
@@ -1984,7 +1985,7 @@ function normalizeSnapshotSymbol(value) {
 
 function normalizeSnapshotSymbolByName(symbol, name) {
   const normalizedSymbol = normalizeSnapshotSymbol(symbol);
-  const normalizedName = sanitizeName(name);
+  const normalizedName = normalizeSecurityName(normalizedSymbol || symbol, sanitizeName(name));
   const candidates = SNAPSHOT_SYMBOL_OVERRIDES_BY_NAME[normalizedName];
 
   if (!Array.isArray(candidates) || candidates.length === 0) {

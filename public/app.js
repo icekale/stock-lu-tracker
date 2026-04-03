@@ -148,6 +148,54 @@ function normalizeSymbol(rawSymbol) {
   return value;
 }
 
+function getMarketBucket(rawSymbol) {
+  const symbol = normalizeSymbol(rawSymbol);
+  if (/^\d{6}\.(SH|SZ|SS)$/.test(symbol)) {
+    return "a";
+  }
+  if (/^\d{4,5}\.HK$/.test(symbol)) {
+    return "h";
+  }
+  return "other";
+}
+
+function groupRowsByMarket(rows) {
+  const groups = [
+    { key: "a", label: "A股", rows: [] },
+    { key: "h", label: "H股", rows: [] },
+    { key: "other", label: "其他", rows: [] }
+  ];
+
+  const groupMap = new Map(groups.map((item) => [item.key, item]));
+  rows.forEach((item) => {
+    const bucket = getMarketBucket(item.symbol);
+    const group = groupMap.get(bucket) || groupMap.get("other");
+    group.rows.push(item);
+  });
+
+  return groups.filter((item) => item.rows.length > 0);
+}
+
+function renderGroupedRows(rows, columnCount, renderRow) {
+  return groupRowsByMarket(rows)
+    .map((group) => {
+      const label = escapeHtml(group.label);
+      const count = escapeHtml(`${group.rows.length}只`);
+      return `
+        <tr class="market-group-row">
+          <td colspan="${columnCount}">
+            <div class="market-group-cell">
+              <span class="market-group-label">${label}</span>
+              <span class="market-group-count">${count}</span>
+            </div>
+          </td>
+        </tr>
+        ${group.rows.map((item) => renderRow(item)).join("")}
+      `;
+    })
+    .join("");
+}
+
 function monthLabel(snapshot) {
   const title = String(snapshot?.title || "");
   const matched = title.match(/(20\d{2})\s*年\s*(\d{1,2})\s*月/);
@@ -784,8 +832,7 @@ function renderAdjustTable(rows) {
     return;
   }
 
-  els.adjustRowsBody.innerHTML = rows
-    .map((item) => {
+  els.adjustRowsBody.innerHTML = renderGroupedRows(rows, 6, (item) => {
       const symbol = escapeHtml(item.symbol);
       const name = escapeHtml(item.name);
       const actionClass = safeBadgeClass(item.actionClass);
@@ -803,8 +850,7 @@ function renderAdjustTable(rows) {
           <td class="mono">${holdingAmount}</td>
         </tr>
       `;
-    })
-    .join("");
+    });
 }
 
 function renderOpenTable(rows) {
@@ -816,8 +862,7 @@ function renderOpenTable(rows) {
     return;
   }
 
-  els.openRowsBody.innerHTML = rows
-    .map((item) => {
+  els.openRowsBody.innerHTML = renderGroupedRows(rows, 4, (item) => {
       const symbol = escapeHtml(item.symbol);
       const name = escapeHtml(item.name);
       const qty = escapeHtml(`+${formatNumber(item.qty, 0)}`);
@@ -829,8 +874,7 @@ function renderOpenTable(rows) {
           <td class="history-icon">◷</td>
         </tr>
       `;
-    })
-    .join("");
+    });
 }
 
 function renderCloseTable(rows) {
@@ -842,8 +886,7 @@ function renderCloseTable(rows) {
     return;
   }
 
-  els.closeRowsBody.innerHTML = rows
-    .map((item) => {
+  els.closeRowsBody.innerHTML = renderGroupedRows(rows, 4, (item) => {
       const symbol = escapeHtml(item.symbol);
       const name = escapeHtml(item.name);
       const qty = escapeHtml(formatNumber(item.qty, 0));
@@ -855,8 +898,7 @@ function renderCloseTable(rows) {
           <td class="history-icon">◷</td>
         </tr>
       `;
-    })
-    .join("");
+    });
 }
 
 function renderLatestTable(rows) {
@@ -868,8 +910,7 @@ function renderLatestTable(rows) {
     return;
   }
 
-  els.latestRowsBody.innerHTML = rows
-    .map((item) => {
+  els.latestRowsBody.innerHTML = renderGroupedRows(rows, 5, (item) => {
       const symbol = escapeHtml(item.symbol);
       const name = escapeHtml(item.name);
       const qty = escapeHtml(formatNumber(item.qty, 0));
@@ -884,8 +925,7 @@ function renderLatestTable(rows) {
           <td class="mono">${marketValue}</td>
         </tr>
       `;
-    })
-    .join("");
+    });
 }
 
 function renderTabState() {

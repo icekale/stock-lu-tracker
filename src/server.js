@@ -6,7 +6,7 @@ const express = require("express");
 const { ensureStore, readStore, mutateStore } = require("./store");
 const { buildPortfolio, buildMonthlyStatus, toMonthKey } = require("./portfolio");
 const { refreshQuotes } = require("./quotes");
-const { toApiSymbol, normalizeMarket } = require("./symbols");
+const { toApiSymbol, normalizeMarket, normalizeSecurityName } = require("./symbols");
 const {
   ensureAutoTrackingState,
   mergeAutoTrackingConfig,
@@ -344,7 +344,7 @@ function parseTradeInput(payload) {
     symbol,
     apiSymbol,
     market,
-    name: String(payload.name || "").trim(),
+    name: normalizeSecurityName(symbol, payload.name, market),
     type,
     quantity,
     price,
@@ -549,6 +549,7 @@ function sanitizeMasterSnapshotRow(row) {
   const action = String(row.action || "HOLD").toUpperCase();
   const output = {
     ...row,
+    name: normalizeSecurityName(row.symbol, row.name),
     marketName: normalizeSnapshotMarketNameLabel(row.symbol, row.marketName)
   };
 

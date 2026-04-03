@@ -1,3 +1,5 @@
+const { normalizeSecurityName } = require("./symbols");
+
 function toNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : 0;
@@ -43,7 +45,7 @@ function buildPortfolio(trades, quotes) {
         apiSymbol,
         rawSymbol: trade.symbol,
         market: trade.market,
-        name: trade.name || "",
+        name: normalizeSecurityName(trade.apiSymbol || trade.symbol, trade.name, trade.market),
         quantity: 0,
         avgCost: 0,
         realizedPnl: 0
@@ -51,7 +53,7 @@ function buildPortfolio(trades, quotes) {
     }
 
     const state = symbolStates.get(apiSymbol);
-    state.name = trade.name || state.name;
+    state.name = normalizeSecurityName(trade.apiSymbol || trade.symbol, trade.name || state.name, trade.market || state.market);
     state.market = trade.market || state.market;
 
     const qty = Math.max(0, toNumber(trade.quantity));
@@ -119,7 +121,7 @@ function buildPortfolio(trades, quotes) {
     positions.push({
       apiSymbol: state.apiSymbol,
       symbol: state.rawSymbol,
-      name: state.name || state.apiSymbol,
+      name: normalizeSecurityName(state.apiSymbol || state.rawSymbol, state.name || state.apiSymbol, state.market) || state.apiSymbol,
       market: state.market,
       quantity: state.quantity,
       avgCost: state.avgCost,
