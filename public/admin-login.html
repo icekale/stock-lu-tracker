@@ -42,6 +42,39 @@
         padding: 28px;
       }
 
+      .card-topbar {
+        display: flex;
+        justify-content: flex-start;
+        margin-bottom: 16px;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 36px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+      }
+
+      .back-link:hover {
+        background: #f6f8fb;
+        border-color: rgba(12, 18, 34, 0.16);
+        transform: translateY(-1px);
+      }
+
+      .back-link:focus-visible {
+        outline: 2px solid rgba(0, 113, 227, 0.24);
+        outline-offset: 2px;
+      }
+
       h1 {
         margin: 0;
         font-size: 1.5rem;
@@ -104,6 +137,9 @@
   </head>
   <body>
     <main class="card">
+      <div class="card-topbar">
+        <a class="back-link" href="/">← 返回主页</a>
+      </div>
       <h1>后台配置登录</h1>
       <p>请输入管理密码后进入配置页面。</p>
       <form id="loginForm">
