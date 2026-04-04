@@ -30,6 +30,8 @@ body {
 }
 
 body {
+  --page-gutter: clamp(18px, 3vw, 36px);
+  --shell-width: min(1180px, calc(100vw - (var(--page-gutter) * 2)));
   font-family: "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
   color: var(--text);
   background:
@@ -38,6 +40,15 @@ body {
     linear-gradient(180deg, #f8f8fb 0%, var(--bg) 45%, #f2f2f5 100%);
   min-height: 100vh;
   padding-top: 52px;
+}
+
+body.admin-page {
+  --page-gutter: clamp(12px, 1.4vw, 20px);
+  --shell-width: min(1860px, calc(100vw - (var(--page-gutter) * 2)));
+  background:
+    radial-gradient(circle at 12% -4%, rgba(0, 113, 227, 0.08), transparent 30%),
+    radial-gradient(circle at 100% 0%, rgba(255, 128, 64, 0.06), transparent 36%),
+    linear-gradient(180deg, #f8f8fb 0%, #f4f5f8 52%, #f1f2f5 100%);
 }
 
 .hidden {
@@ -56,7 +67,7 @@ body {
 }
 
 .apple-nav-inner {
-  width: min(1240px, 92vw);
+  width: min(var(--shell-width), calc(100vw - (var(--page-gutter) * 2)));
   margin: 0 auto;
   height: 52px;
   display: flex;
@@ -104,7 +115,7 @@ body {
 }
 
 .app-shell {
-  width: min(1320px, 94vw);
+  width: min(var(--shell-width), calc(100vw - (var(--page-gutter) * 2)));
   margin: 24px auto 40px;
   display: grid;
   gap: 14px;
@@ -131,6 +142,15 @@ body {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
   padding: 18px 20px;
+}
+
+.admin-page .app-shell {
+  margin: 18px auto 28px;
+  gap: 18px;
+}
+
+.admin-page .panel {
+  padding: 20px 24px;
 }
 
 .hero {
@@ -749,14 +769,14 @@ tbody tr.row-anomaly:hover {
   text-decoration: underline;
 }
 
-.config-shell {
-  width: min(1180px, 94vw);
-}
-
 .config-panel {
   padding: 16px 16px 14px;
   border-radius: 18px;
   background: linear-gradient(180deg, #f8f8fa, #f4f5f8);
+}
+
+.admin-page .config-panel {
+  padding: 20px 24px 18px;
 }
 
 .compact-form {
@@ -782,6 +802,14 @@ tbody tr.row-anomaly:hover {
 
 .result-grid .panel {
   border-radius: 18px;
+}
+
+.admin-page .table-wrap.short {
+  max-height: 430px;
+}
+
+.admin-page .inline-actions {
+  row-gap: 8px;
 }
 
 @media (max-width: 1300px) {

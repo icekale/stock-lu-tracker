@@ -1,6 +1,6 @@
 {
   "name": "stock-lu-tracker",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Local stock portfolio tracker with month-end update workflow.",
   "main": "src/server.js",
   "scripts": {
@@ -12,7 +12,15 @@
     "stocks",
     "tracker"
   ],
-  "author": "",
+  "author": "Kale",
+  "homepage": "https://github.com/icekale/stock-lu-tracker",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/icekale/stock-lu-tracker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/icekale/stock-lu-tracker/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "express": "^4.21.2",

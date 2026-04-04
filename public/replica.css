@@ -4,6 +4,7 @@
 }
 
 body.replica-body {
+  --shell-width: min(920px, 96vw);
   margin: 0;
   padding: 70px 12px 28px;
   background: #f4f5f8;
@@ -22,7 +23,7 @@ body.replica-body {
 }
 
 .apple-nav-inner {
-  width: min(1240px, 92vw);
+  width: var(--shell-width);
   margin: 0 auto;
   height: 52px;
   display: flex;
@@ -70,7 +71,7 @@ body.replica-body {
 }
 
 .replica-wrap {
-  width: min(920px, 96vw);
+  width: var(--shell-width);
   margin: 0 auto;
   display: grid;
   gap: 12px;

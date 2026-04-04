@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>后台登录</title>
+    <link rel="stylesheet" href="/site-footer.css" />
     <style>
       :root {
         color-scheme: light;
@@ -27,8 +28,10 @@
           radial-gradient(circle at 85% 80%, #e9ecef 0%, transparent 45%), var(--bg);
         color: var(--text);
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 18px;
         padding: 24px;
       }
 
@@ -135,7 +138,7 @@
       }
     </style>
   </head>
-  <body>
+  <body class="login-page">
     <main class="card">
       <div class="card-topbar">
         <a class="back-link" href="/">← 返回主页</a>
@@ -149,6 +152,29 @@
       <div id="status" class="status"></div>
     </main>
 
+    <footer class="site-footer site-footer-login" data-site-footer>
+      <div class="site-footer-inner">
+        <p class="site-footer-title">超级鹿鼎公持仓自动跟踪</p>
+        <div class="site-footer-meta">
+          <span class="site-footer-item" data-footer-author data-fallback="Kale">作者：Kale</span>
+          <span class="site-footer-sep">·</span>
+          <span class="site-footer-item" data-footer-version data-fallback="v0.1.7">版本：v0.1.7</span>
+          <span class="site-footer-sep">·</span>
+          <a
+            class="site-footer-link"
+            data-footer-github
+            data-fallback="icekale/stock-lu-tracker"
+            href="https://github.com/icekale/stock-lu-tracker"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub：icekale/stock-lu-tracker
+          </a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/site-footer.js"></script>
     <script>
       const els = {
         form: document.getElementById("loginForm"),

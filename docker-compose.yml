@@ -1,6 +1,6 @@
 services:
   stock-lu:
-    image: icekale/stock-lu-tracker:v0.1.6
+    image: icekale/stock-lu-tracker:v0.1.7
     container_name: stock-lu
     ports:
       - "8787:8787"

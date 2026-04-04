@@ -2,6 +2,7 @@ const path = require("node:path");
 const { createHash, createHmac, randomUUID, timingSafeEqual } = require("node:crypto");
 
 const express = require("express");
+const appPackage = require("../package.json");
 
 const { ensureStore, readStore, mutateStore } = require("./store");
 const { buildPortfolio, buildMonthlyStatus, toMonthKey } = require("./portfolio");
@@ -33,6 +34,22 @@ const PROFILE_LINKS = {
   xueqiu: "https://xueqiu.com/u/8790885129",
   weibo: "https://weibo.com/u/3962719063"
 };
+
+function normalizeRepositoryUrl(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^git\+/, "")
+    .replace(/\.git$/i, "");
+}
+
+const APP_META = Object.freeze({
+  productName: "超级鹿鼎公持仓自动跟踪",
+  version: String(appPackage.version || "0.0.0").trim() || "0.0.0",
+  versionLabel: `v${String(appPackage.version || "0.0.0").trim() || "0.0.0"}`,
+  author: String(appPackage.author || "Kale").trim() || "Kale",
+  repositoryUrl: normalizeRepositoryUrl(appPackage.homepage || appPackage.repository?.url),
+  repositoryLabel: "icekale/stock-lu-tracker"
+});
 
 let autoTrackingRunning = false;
 let autoTrackingTimer = null;
@@ -1304,6 +1321,10 @@ app.get("/api/health", (_req, res) => {
     ok: true,
     now: new Date().toISOString()
   });
+});
+
+app.get("/api/app-meta", (_req, res) => {
+  res.json(APP_META);
 });
 
 app.get("/api/state", async (_req, res, next) => {

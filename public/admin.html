@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>后台配置</title>
     <link rel="stylesheet" href="/admin.css" />
+    <link rel="stylesheet" href="/site-footer.css" />
   </head>
-  <body>
+  <body class="admin-page">
     <nav class="apple-nav">
       <div class="apple-nav-inner">
         <p class="nav-brand">Portfolio OS</p>
@@ -285,6 +286,29 @@
       </section>
     </main>
 
+    <footer class="site-footer site-footer-admin" data-site-footer>
+      <div class="site-footer-inner">
+        <p class="site-footer-title">超级鹿鼎公持仓自动跟踪</p>
+        <div class="site-footer-meta">
+          <span class="site-footer-item" data-footer-author data-fallback="Kale">作者：Kale</span>
+          <span class="site-footer-sep">·</span>
+          <span class="site-footer-item" data-footer-version data-fallback="v0.1.7">版本：v0.1.7</span>
+          <span class="site-footer-sep">·</span>
+          <a
+            class="site-footer-link"
+            data-footer-github
+            data-fallback="icekale/stock-lu-tracker"
+            href="https://github.com/icekale/stock-lu-tracker"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub：icekale/stock-lu-tracker
+          </a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/site-footer.js"></script>
     <script src="/auto-sync.js"></script>
   </body>
 </html>
