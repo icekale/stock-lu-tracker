@@ -1,6 +1,33 @@
+const { createHash } = require("node:crypto");
+
+const SECURITY_NAME_CACHE_TTL_MS = Math.max(
+  0,
+  Number(process.env.SECURITY_NAME_CACHE_TTL_MS) || 12 * 60 * 60 * 1000
+);
+const SECURITY_NAME_FAILURE_CACHE_TTL_MS = Math.max(
+  0,
+  Number(process.env.SECURITY_NAME_FAILURE_CACHE_TTL_MS) || 2 * 60 * 1000
+);
+const securityNameCache = new Map();
+const securityNameInFlight = new Map();
+
 function toNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function hashText(value) {
+  return createHash("sha256").update(String(value || "")).digest("hex").slice(0, 16);
+}
+
+function buildSecurityNameCacheKey(apiSymbol, options = {}) {
+  const symbol = String(apiSymbol || "").trim().toUpperCase();
+  const xueqiuCookie = String(options?.xueqiuCookie || "").trim();
+
+  return JSON.stringify({
+    apiSymbol: symbol,
+    xueqiuCookieHash: xueqiuCookie ? hashText(xueqiuCookie) : ""
+  });
 }
 
 function toTencentCode(apiSymbol) {
@@ -159,6 +186,81 @@ async function fetchOneQuote(apiSymbol) {
   };
 }
 
+async function lookupOneSecurityName(apiSymbol, options = {}) {
+  const xueqiuCookie = String(options?.xueqiuCookie || "").trim();
+  let xueqiuError = "";
+
+  if (xueqiuCookie) {
+    try {
+      const shortName = await fetchOneXueqiuSecurityName(apiSymbol, xueqiuCookie);
+      if (shortName) {
+        return {
+          ok: true,
+          apiSymbol,
+          shortName,
+          source: "xueqiu"
+        };
+      }
+    } catch (error) {
+      xueqiuError = error.message;
+    }
+  }
+
+  try {
+    const payload = await fetchOneQuote(apiSymbol);
+    return {
+      ok: true,
+      apiSymbol,
+      shortName: String(payload.shortName || "").trim(),
+      source: "tencent"
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      apiSymbol,
+      error: xueqiuError ? `${xueqiuError}; ${error.message}` : error.message
+    };
+  }
+}
+
+async function lookupOneSecurityNameCached(apiSymbol, options = {}) {
+  const cacheKey = buildSecurityNameCacheKey(apiSymbol, options);
+  const now = Date.now();
+
+  if (SECURITY_NAME_CACHE_TTL_MS > 0) {
+    const cached = securityNameCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return { ...cached.result };
+    }
+  }
+
+  if (securityNameInFlight.has(cacheKey)) {
+    const shared = await securityNameInFlight.get(cacheKey);
+    return { ...shared };
+  }
+
+  const task = lookupOneSecurityName(apiSymbol, options)
+    .then((result) => {
+      const ttlMs =
+        result.ok && result.shortName ? SECURITY_NAME_CACHE_TTL_MS : SECURITY_NAME_FAILURE_CACHE_TTL_MS;
+
+      if (ttlMs > 0) {
+        securityNameCache.set(cacheKey, {
+          result: { ...result },
+          expiresAt: Date.now() + ttlMs
+        });
+      }
+      return result;
+    })
+    .finally(() => {
+      securityNameInFlight.delete(cacheKey);
+    });
+
+  securityNameInFlight.set(cacheKey, task);
+  const result = await task;
+  return { ...result };
+}
+
 async function mapLimit(items, limit, mapper) {
   const queue = [...items];
   const results = [];
@@ -227,39 +329,7 @@ async function lookupSecurityNames(apiSymbols, options = {}) {
   const xueqiuCookie = String(options?.xueqiuCookie || "").trim();
 
   const results = await mapLimit(uniqueSymbols, 4, async (apiSymbol) => {
-    let xueqiuError = "";
-
-    if (xueqiuCookie) {
-      try {
-        const shortName = await fetchOneXueqiuSecurityName(apiSymbol, xueqiuCookie);
-        if (shortName) {
-          return {
-            ok: true,
-            apiSymbol,
-            shortName,
-            source: "xueqiu"
-          };
-        }
-      } catch (error) {
-        xueqiuError = error.message;
-      }
-    }
-
-    try {
-      const payload = await fetchOneQuote(apiSymbol);
-      return {
-        ok: true,
-        apiSymbol,
-        shortName: String(payload.shortName || "").trim(),
-        source: "tencent"
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        apiSymbol,
-        error: xueqiuError ? `${xueqiuError}; ${error.message}` : error.message
-      };
-    }
+    return lookupOneSecurityNameCached(apiSymbol, { xueqiuCookie });
   });
 
   const namesBySymbol = {};

@@ -50,9 +50,12 @@ const APP_META = Object.freeze({
   repositoryUrl: normalizeRepositoryUrl(appPackage.homepage || appPackage.repository?.url),
   repositoryLabel: "icekale/stock-lu-tracker"
 });
+const CATALOG_CACHE_TTL_MS = Math.max(0, Number(process.env.CATALOG_CACHE_TTL_MS) || 5 * 60 * 1000);
 
 let autoTrackingRunning = false;
 let autoTrackingTimer = null;
+const catalogCache = new Map();
+const catalogInFlight = new Map();
 
 app.use(express.json({ limit: "1mb" }));
 
@@ -113,6 +116,76 @@ function parseCookies(cookieHeader) {
 
 function hashText(value) {
   return createHash("sha256").update(String(value || "")).digest();
+}
+
+function toTrimmedText(value) {
+  return String(value || "").trim();
+}
+
+function toOptionalNumber(value, fallback = null) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function buildCatalogCacheKey(config, options = {}) {
+  return JSON.stringify({
+    xueqiuCookieHash: toTrimmedText(config?.xueqiuCookie)
+      ? createHash("sha256").update(toTrimmedText(config.xueqiuCookie)).digest("hex").slice(0, 16)
+      : "",
+    titleRegex: toTrimmedText(config?.xueqiuTitleRegex),
+    backfillPages: toOptionalNumber(options.backfillPages, toOptionalNumber(config?.backfillMaxPages)),
+    backfillPageSize: toOptionalNumber(options.backfillPageSize, toOptionalNumber(config?.backfillPageSize))
+  });
+}
+
+function invalidateCatalogCache() {
+  catalogCache.clear();
+}
+
+async function collectSuperLudinggongPostCatalogCached(config, options = {}) {
+  const cacheKey = buildCatalogCacheKey(config, options);
+  const now = Date.now();
+
+  if (CATALOG_CACHE_TTL_MS > 0) {
+    const cached = catalogCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return {
+        catalog: structuredClone(cached.catalog),
+        cacheHit: true
+      };
+    }
+  }
+
+  if (catalogInFlight.has(cacheKey)) {
+    const sharedCatalog = await catalogInFlight.get(cacheKey);
+    return {
+      catalog: structuredClone(sharedCatalog),
+      cacheHit: true
+    };
+  }
+
+  const task = collectSuperLudinggongPostCatalog(config, options)
+    .then((catalog) => {
+      const snapshot = structuredClone(catalog);
+      if (CATALOG_CACHE_TTL_MS > 0) {
+        catalogCache.set(cacheKey, {
+          catalog: snapshot,
+          expiresAt: Date.now() + CATALOG_CACHE_TTL_MS
+        });
+      }
+      return snapshot;
+    })
+    .finally(() => {
+      catalogInFlight.delete(cacheKey);
+    });
+
+  catalogInFlight.set(cacheKey, task);
+
+  const catalog = await task;
+  return {
+    catalog: structuredClone(catalog),
+    cacheHit: false
+  };
 }
 
 function isAdminPasswordMatch(inputPassword) {
@@ -1540,6 +1613,8 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
         : null;
     });
 
+    invalidateCatalogCache();
+
     return {
       ok: true,
       mode: collectOptions.mode || "normal",
@@ -2132,6 +2207,7 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
       autoTracking.config = mergeAutoTrackingConfig(patch);
     });
 
+    invalidateCatalogCache();
     await scheduleAutoTracking();
 
     const store = await readStore();
@@ -2211,7 +2287,7 @@ app.post("/api/auto-tracking/catalog", async (req, res, next) => {
     const autoTracking = ensureAutoTrackingState(store);
     const config = mergeAutoTrackingConfig(autoTracking.config);
 
-    const catalog = await collectSuperLudinggongPostCatalog(config, {
+    const { catalog, cacheHit } = await collectSuperLudinggongPostCatalogCached(config, {
       backfillPages: pages,
       backfillPageSize: pageSize
     });
@@ -2227,7 +2303,18 @@ app.post("/api/auto-tracking/catalog", async (req, res, next) => {
 
     res.json({
       posts,
-      logs: catalog.logs
+      logs: cacheHit
+        ? [
+            {
+              id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+              createdAt: new Date().toISOString(),
+              level: "info",
+              message: `目录缓存命中：复用 ${Math.round(CATALOG_CACHE_TTL_MS / 1000)} 秒内结果`
+            },
+            ...(catalog.logs || [])
+          ]
+        : catalog.logs,
+      cached: cacheHit
     });
   } catch (error) {
     next(error);
@@ -2318,6 +2405,12 @@ app.post("/api/auto-tracking/recalculate-snapshots", async (_req, res, next) => 
       const autoTracking = ensureAutoTrackingState(draft);
       const nextSnapshots = [];
       const nameStats = buildNameValidationSourceStats(securityNames.namesBySymbol, securityNames.sourcesBySymbol);
+      const originalRowsBySnapshotKey = new Map(
+        (draft.masterSnapshots || []).map((snapshot, index) => [
+          String(snapshot?.id || snapshot?.postId || index),
+          Array.isArray(snapshot?.rows) ? structuredClone(snapshot.rows) : []
+        ])
+      );
 
       applyCollectedSecurityNameValidation(
         draft.masterSnapshots || [],
@@ -2340,31 +2433,44 @@ app.post("/api/auto-tracking/recalculate-snapshots", async (_req, res, next) => 
       }
 
       for (const snapshot of draft.masterSnapshots || []) {
+        const snapshotKey = String(snapshot?.id || snapshot?.postId || nextSnapshots.length);
+        const originalRows = Array.isArray(originalRowsBySnapshotKey.get(snapshotKey))
+          ? originalRowsBySnapshotKey.get(snapshotKey)
+          : [];
         const sanitized = sanitizeMasterSnapshotRecord(snapshot, { includeDiagnostics: true });
         const cleanRows = sanitized.rows.map((row) => {
           const { diagnostics, ...rest } = row;
           return rest;
         });
-        const changed = JSON.stringify(snapshot.rows || []) !== JSON.stringify(cleanRows);
+        let changedRowsInSnapshot = 0;
+        const rowCompareLength = Math.max(originalRows.length, cleanRows.length);
+
+        for (let index = 0; index < rowCompareLength; index += 1) {
+          const originalSerialized = JSON.stringify(originalRows[index] || null);
+          const cleanSerialized = JSON.stringify(cleanRows[index] || null);
+          if (originalSerialized !== cleanSerialized) {
+            changedRowsInSnapshot += 1;
+          }
+        }
 
         summary.snapshotCount += 1;
-        summary.changedRowCount += cleanRows.reduce((count, _row, index) => {
-          const diagnostics = sanitized.rows[index]?.diagnostics;
-          return count + (diagnostics && diagnostics.fixes.length > 0 ? 1 : 0);
-        }, 0);
+        summary.changedRowCount += changedRowsInSnapshot;
         summary.issueRowCount += cleanRows.reduce((count, _row, index) => {
           const diagnostics = sanitized.rows[index]?.diagnostics;
           return count + (diagnostics && diagnostics.issues.length > 0 ? 1 : 0);
         }, 0);
 
-        if (changed) {
+        if (changedRowsInSnapshot > 0) {
           summary.changedSnapshotCount += 1;
         }
 
         nextSnapshots.push({
           ...snapshot,
           rows: cleanRows,
-          updatedAt: changed ? new Date().toISOString() : snapshot.updatedAt || snapshot.createdAt || new Date().toISOString()
+          updatedAt:
+            changedRowsInSnapshot > 0
+              ? new Date().toISOString()
+              : snapshot.updatedAt || snapshot.createdAt || new Date().toISOString()
         });
       }
 

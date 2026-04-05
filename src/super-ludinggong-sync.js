@@ -98,12 +98,27 @@ const OCR_CACHE_MAX_ITEMS = clampNumber(process.env.OCR_CACHE_MAX_ITEMS, 1200, 1
 const OCR_CACHE_TTL_MINUTES = clampNumber(process.env.OCR_CACHE_TTL_MINUTES, 24 * 60, 10, 14 * 24 * 60);
 const OCR_CACHE_TTL_MS = OCR_CACHE_TTL_MINUTES * 60 * 1000;
 const SNAPSHOT_PARSE_CONCURRENCY = clampNumber(process.env.SNAPSHOT_PARSE_CONCURRENCY, 3, 1, 6);
+const SNAPSHOT_IMAGE_PARSE_CONCURRENCY = clampNumber(process.env.SNAPSHOT_IMAGE_PARSE_CONCURRENCY, 2, 1, 3);
+const POST_DETAIL_CACHE_TTL_MS = clampNumber(
+  process.env.POST_DETAIL_CACHE_TTL_MS,
+  5 * 60 * 1000,
+  0,
+  60 * 60 * 1000
+);
+const POST_DETAIL_FAILURE_CACHE_TTL_MS = clampNumber(
+  process.env.POST_DETAIL_FAILURE_CACHE_TTL_MS,
+  60 * 1000,
+  0,
+  10 * 60 * 1000
+);
 const OCR_DISK_CACHE_ENABLED = !["0", "false", "no", "off"].includes(
   String(process.env.OCR_DISK_CACHE_ENABLED || "true").trim().toLowerCase()
 );
 const OCR_CACHE_DIR = path.join(process.cwd(), "data", "ocr-cache");
 const OCR_DISK_CACHE_PRUNE_INTERVAL_MS = 30 * 60 * 1000;
 const ocrTextCache = new Map();
+const postDetailCache = new Map();
+const postDetailInFlight = new Map();
 let localOcrQueue = Promise.resolve();
 let ocrDiskCacheInitPromise = null;
 let ocrDiskCacheWriteQueue = Promise.resolve();
@@ -1595,7 +1610,82 @@ function detectSourceByUrl(rawUrl) {
   }
 }
 
+function buildPostDetailCacheKey(source, postId, cookie = "") {
+  return JSON.stringify({
+    source: String(source || "").trim().toLowerCase(),
+    postId: String(postId || "").trim(),
+    cookieHash: String(cookie || "").trim()
+      ? createHash("sha256").update(String(cookie).trim()).digest("hex").slice(0, 16)
+      : ""
+  });
+}
+
+function getCachedPostDetail(cacheKey) {
+  const entry = postDetailCache.get(cacheKey);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAt <= Date.now()) {
+    postDetailCache.delete(cacheKey);
+    return null;
+  }
+
+  return entry;
+}
+
+function setCachedPostDetail(cacheKey, payload, ttlMs) {
+  if (!cacheKey || !Number.isFinite(ttlMs) || ttlMs <= 0) {
+    return;
+  }
+
+  postDetailCache.set(cacheKey, {
+    ...payload,
+    expiresAt: Date.now() + ttlMs
+  });
+}
+
+async function withPostDetailCache(cacheKey, loader) {
+  const cached = getCachedPostDetail(cacheKey);
+  if (cached) {
+    if (cached.ok) {
+      return structuredClone(cached.value);
+    }
+    throw new Error(cached.error || "帖子详情缓存失败");
+  }
+
+  if (postDetailInFlight.has(cacheKey)) {
+    return structuredClone(await postDetailInFlight.get(cacheKey));
+  }
+
+  const task = Promise.resolve()
+    .then(loader)
+    .then((result) => {
+      setCachedPostDetail(cacheKey, { ok: true, value: structuredClone(result) }, POST_DETAIL_CACHE_TTL_MS);
+      return result;
+    })
+    .catch((error) => {
+      setCachedPostDetail(
+        cacheKey,
+        {
+          ok: false,
+          error: String(error?.message || error || "帖子详情抓取失败")
+        },
+        POST_DETAIL_FAILURE_CACHE_TTL_MS
+      );
+      throw error;
+    })
+    .finally(() => {
+      postDetailInFlight.delete(cacheKey);
+    });
+
+  postDetailInFlight.set(cacheKey, task);
+  return structuredClone(await task);
+}
+
 async function fetchXueqiuPostById(postId, config, postUrl) {
+  const cacheKey = buildPostDetailCacheKey("xueqiu", postId, config?.xueqiuCookie);
+  return withPostDetailCache(cacheKey, async () => {
   const headers = buildXueqiuHeaders(config.xueqiuCookie, postUrl || `https://xueqiu.com/u/${XUEQIU_UID}`);
   const endpoints = [
     `https://xueqiu.com/statuses/original/show.json?id=${encodeURIComponent(postId)}`,
@@ -1644,17 +1734,21 @@ async function fetchXueqiuPostById(postId, config, postUrl) {
   }
 
   throw new Error(errors.join(" | "));
+  });
 }
 
 async function fetchWeiboPostById(postId, config, postUrl) {
-  const headers = buildWeiboHeaders(config.weiboCookie, postUrl || `https://weibo.com/u/${WEIBO_UID}`);
-  const endpoint = `https://weibo.com/ajax/statuses/show?id=${encodeURIComponent(postId)}`;
-  const data = await requestJson(endpoint, { headers }, "微博帖子详情");
-  const payload = data?.data && typeof data.data === "object" ? data.data : data;
-  return normalizeWeiboPost(payload, {
-    postId,
-    link: postUrl,
-    fromPinned: true
+  const cacheKey = buildPostDetailCacheKey("weibo", postId, config?.weiboCookie);
+  return withPostDetailCache(cacheKey, async () => {
+    const headers = buildWeiboHeaders(config.weiboCookie, postUrl || `https://weibo.com/u/${WEIBO_UID}`);
+    const endpoint = `https://weibo.com/ajax/statuses/show?id=${encodeURIComponent(postId)}`;
+    const data = await requestJson(endpoint, { headers }, "微博帖子详情");
+    const payload = data?.data && typeof data.data === "object" ? data.data : data;
+    return normalizeWeiboPost(payload, {
+      postId,
+      link: postUrl,
+      fromPinned: true
+    });
   });
 }
 
@@ -2160,12 +2254,107 @@ function isSuspiciousSnapshotRow(row) {
   return snapshotRowSanityPenalty(row) >= 16;
 }
 
+function isStrongSnapshotRow(row) {
+  const qty = getSnapshotRowQty(row);
+  const marketValue = Number(row?.marketValue);
+  const referenceCost = Number(row?.referenceCost ?? row?.latestCost);
+  return (
+    qty > 0 &&
+    Number.isFinite(marketValue) &&
+    marketValue > 0 &&
+    Number.isFinite(referenceCost) &&
+    referenceCost > 0 &&
+    scoreSnapshotRow(row) >= 7 &&
+    snapshotRowSanityPenalty(row) < 8
+  );
+}
+
+function summarizeSnapshotRowsQuality(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (list.length === 0) {
+    return {
+      totalRows: 0,
+      uniqueSymbols: 0,
+      suspiciousRows: 0,
+      strongRows: 0,
+      avgScore: 0,
+      avgPenalty: 0
+    };
+  }
+
+  const symbols = new Set();
+  let suspiciousRows = 0;
+  let strongRows = 0;
+  let totalScore = 0;
+  let totalPenalty = 0;
+
+  for (const row of list) {
+    const symbol = normalizeSnapshotSymbolByName(row?.symbol, row?.name);
+    if (symbol) {
+      symbols.add(symbol);
+    }
+
+    const score = scoreSnapshotRow(row);
+    const penalty = snapshotRowSanityPenalty(row);
+    totalScore += score;
+    totalPenalty += penalty;
+
+    if (penalty >= 16) {
+      suspiciousRows += 1;
+    }
+    if (isStrongSnapshotRow(row)) {
+      strongRows += 1;
+    }
+  }
+
+  return {
+    totalRows: list.length,
+    uniqueSymbols: symbols.size,
+    suspiciousRows,
+    strongRows,
+    avgScore: totalScore / list.length,
+    avgPenalty: totalPenalty / list.length
+  };
+}
+
 function shouldRunQwenCompatibleFallback(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) {
+  const summary = summarizeSnapshotRowsQuality(rows);
+  if (summary.totalRows === 0) {
     return true;
   }
 
-  return rows.some((row) => isSuspiciousSnapshotRow(row));
+  const suspiciousRatio = summary.suspiciousRows / summary.totalRows;
+  const strongRatio = summary.strongRows / summary.totalRows;
+
+  if (
+    summary.totalRows >= 5 &&
+    summary.suspiciousRows <= 1 &&
+    summary.strongRows >= Math.max(3, summary.totalRows - 1) &&
+    summary.uniqueSymbols >= Math.max(3, summary.totalRows - 1)
+  ) {
+    return false;
+  }
+
+  if (
+    summary.totalRows >= 4 &&
+    suspiciousRatio <= 0.2 &&
+    strongRatio >= 0.75 &&
+    summary.avgPenalty < 6
+  ) {
+    return false;
+  }
+
+  if (
+    summary.totalRows >= 2 &&
+    summary.suspiciousRows === 0 &&
+    summary.strongRows === summary.totalRows &&
+    summary.uniqueSymbols === summary.totalRows &&
+    summary.avgScore >= 8
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function isClearlyBrokenSnapshotRow(row) {
@@ -2764,18 +2953,21 @@ async function prepareImageForQwenOcr(localPath) {
   }
 }
 
-async function extractRowsWithQwenNativeOcr(imageUrl, post, config) {
+function parseCachedQwenNativeOcrText(cachedText) {
+  const cachedBlocks = parseQwenOcrBlocksFromText(cachedText);
+  return {
+    rows: parseSnapshotRowsFromQwenBlocks(cachedBlocks),
+    rawText: qwenBlocksToPlainText(cachedBlocks)
+  };
+}
+
+async function extractRowsWithQwenNativeOcrFromLocalPath(localPath, imageUrl, post, config) {
   const cacheKey = buildOcrCacheKey(imageUrl, post, "qwen-native");
   const cached = await getCachedOcrText(cacheKey);
   if (cached) {
-    const cachedBlocks = parseQwenOcrBlocksFromText(cached);
-    return {
-      rows: parseSnapshotRowsFromQwenBlocks(cachedBlocks),
-      rawText: qwenBlocksToPlainText(cachedBlocks)
-    };
+    return parseCachedQwenNativeOcrText(cached);
   }
 
-  const localPath = await downloadImageToTempFile(imageUrl, post, config);
   let prepared = { imagePath: localPath, cleanupPath: null };
 
   try {
@@ -2808,6 +3000,14 @@ async function extractRowsWithQwenNativeOcr(imageUrl, post, config) {
     if (prepared.cleanupPath && prepared.cleanupPath !== localPath) {
       await fs.unlink(prepared.cleanupPath).catch(() => {});
     }
+  }
+}
+
+async function extractRowsWithQwenNativeOcr(imageUrl, post, config) {
+  const localPath = await downloadImageToTempFile(imageUrl, post, config);
+  try {
+    return await extractRowsWithQwenNativeOcrFromLocalPath(localPath, imageUrl, post, config);
+  } finally {
     await fs.unlink(localPath).catch(() => {});
   }
 }
@@ -2894,17 +3094,20 @@ function parseQwenSnapshotRowsFromContent(content) {
   return dedupeSnapshotRows(rows.map((item) => normalizeQwenSnapshotRow(item)).filter(Boolean));
 }
 
-async function extractRowsWithQwenCompatibleOcr(imageUrl, post, config) {
+function parseCachedQwenCompatibleOcrText(cachedText) {
+  return {
+    rows: parseQwenSnapshotRowsFromContent(cachedText),
+    rawText: cachedText
+  };
+}
+
+async function extractRowsWithQwenCompatibleOcrFromLocalPath(localPath, imageUrl, post, config) {
   const cacheKey = buildOcrCacheKey(imageUrl, post, "qwen-json");
   const cached = await getCachedOcrText(cacheKey);
   if (cached) {
-    return {
-      rows: parseQwenSnapshotRowsFromContent(cached),
-      rawText: cached
-    };
+    return parseCachedQwenCompatibleOcrText(cached);
   }
 
-  const localPath = await downloadImageToTempFile(imageUrl, post, config);
   const prompt = [
     "请识别这张股票持仓截图，只返回 JSON 数组。",
     "每个数组元素包含以下字段：symbol,name,holdingQty,referenceCost,referenceHoldingCost,marketValue,pnlPct,latestPrice,marketName。",
@@ -2916,13 +3119,18 @@ async function extractRowsWithQwenCompatibleOcr(imageUrl, post, config) {
     "5. 不要返回 markdown 代码块，不要返回任何解释。"
   ].join("\n");
 
+  const rawText = await requestQwenCompatibleCompletion(localPath, prompt, config);
+  setCachedOcrText(cacheKey, rawText);
+  return {
+    rows: parseQwenSnapshotRowsFromContent(rawText),
+    rawText
+  };
+}
+
+async function extractRowsWithQwenCompatibleOcr(imageUrl, post, config) {
+  const localPath = await downloadImageToTempFile(imageUrl, post, config);
   try {
-    const rawText = await requestQwenCompatibleCompletion(localPath, prompt, config);
-    setCachedOcrText(cacheKey, rawText);
-    return {
-      rows: parseQwenSnapshotRowsFromContent(rawText),
-      rawText
-    };
+    return await extractRowsWithQwenCompatibleOcrFromLocalPath(localPath, imageUrl, post, config);
   } finally {
     await fs.unlink(localPath).catch(() => {});
   }
@@ -3388,77 +3596,150 @@ async function extractTextWithOcr(imageUrl, post, config) {
   }
 }
 
+async function extractLocalTextWithOcrFromLocalPath(localPath, imageUrl, post) {
+  const localCacheKey = buildOcrCacheKey(imageUrl, post, "local");
+  const cachedLocal = await getCachedOcrText(localCacheKey);
+  if (cachedLocal) {
+    return cachedLocal;
+  }
+
+  const scaledPath = path.join(
+    os.tmpdir(),
+    `stock-lu-ocr-upscaled-${Date.now()}-${Math.random().toString(16).slice(2)}.png`
+  );
+
+  try {
+    const localText = await extractTextWithLocalOcr(localPath, scaledPath);
+    setCachedOcrText(localCacheKey, localText);
+    return localText;
+  } finally {
+    await fs.unlink(scaledPath).catch(() => {});
+  }
+}
+
+async function processSnapshotImage(imageUrl, post, config, options = {}) {
+  const preferQwen = shouldPreferQwenOcr(config);
+  const explicitQwenOnly = Boolean(options.explicitQwenOnly);
+  let ocrText = "";
+  const extractedRows = [];
+  let localPath = null;
+
+  const getLocalPath = async () => {
+    if (!localPath) {
+      localPath = await downloadImageToTempFile(imageUrl, post, config);
+    }
+    return localPath;
+  };
+
+  try {
+    if (preferQwen) {
+      let nativeRowsFound = false;
+      let shouldTryCompatible = true;
+
+      try {
+        const nativeQwenResult = await extractRowsWithQwenNativeOcrFromLocalPath(
+          await getLocalPath(),
+          imageUrl,
+          post,
+          config
+        );
+        if (nativeQwenResult.rawText) {
+          ocrText += `\n${nativeQwenResult.rawText}`;
+        }
+        if (Array.isArray(nativeQwenResult.rows) && nativeQwenResult.rows.length > 0) {
+          extractedRows.push(...nativeQwenResult.rows);
+          nativeRowsFound = true;
+          shouldTryCompatible = shouldRunQwenCompatibleFallback(nativeQwenResult.rows);
+        }
+      } catch {
+        // Ignore native OCR failure and continue to fallback strategies.
+      }
+
+      if (shouldTryCompatible) {
+        try {
+          const compatibleQwenResult = await extractRowsWithQwenCompatibleOcrFromLocalPath(
+            await getLocalPath(),
+            imageUrl,
+            post,
+            config
+          );
+          if (compatibleQwenResult.rawText) {
+            ocrText += `\n${compatibleQwenResult.rawText}`;
+          }
+          if (Array.isArray(compatibleQwenResult.rows) && compatibleQwenResult.rows.length > 0) {
+            extractedRows.push(...compatibleQwenResult.rows);
+            nativeRowsFound = true;
+          }
+        } catch {
+          // Ignore remote OCR failure and fall back to local OCR.
+        }
+      }
+
+      if (nativeRowsFound) {
+        return {
+          rows: dedupeSnapshotRows(extractedRows),
+          ocrText: ocrText.trim()
+        };
+      }
+    }
+
+    if (explicitQwenOnly) {
+      return {
+        rows: dedupeSnapshotRows(extractedRows),
+        ocrText: ocrText.trim()
+      };
+    }
+
+    try {
+      const text = await extractLocalTextWithOcrFromLocalPath(await getLocalPath(), imageUrl, post);
+      if (text && text.trim()) {
+        ocrText += `\n${text}`;
+        extractedRows.push(...extractRowsFromText(text));
+      }
+    } catch {
+      // Ignore local OCR failure to keep the whole post import moving.
+    }
+
+    return {
+      rows: dedupeSnapshotRows(extractedRows),
+      ocrText: ocrText.trim()
+    };
+  } finally {
+    if (localPath) {
+      await fs.unlink(localPath).catch(() => {});
+    }
+  }
+}
+
 async function parseSnapshotFromPost(post, config) {
   const textRows = extractRowsFromText(post.text);
   let parsedRows = textRows;
   let ocrText = "";
-  const qwenRows = [];
   const explicitQwenOnly = normalizeOcrProvider(config?.ocrProvider) === "qwen";
 
   if (parsedRows.length === 0 && config.ocrEnabled && Array.isArray(post.images) && post.images.length > 0) {
     const maxImages = Math.min(config.ocrMaxImagesPerPost, post.images.length);
+    const imageResults = await mapWithConcurrency(
+      post.images.slice(0, maxImages),
+      Math.min(SNAPSHOT_IMAGE_PARSE_CONCURRENCY, maxImages),
+      async (imageUrl) => processSnapshotImage(imageUrl, post, config, { explicitQwenOnly })
+    );
 
-    for (let i = 0; i < maxImages; i += 1) {
-      const imageUrl = post.images[i];
-      if (shouldPreferQwenOcr(config)) {
-        let nativeRowsFound = false;
-        let shouldTryCompatible = true;
-
-        try {
-          const nativeQwenResult = await extractRowsWithQwenNativeOcr(imageUrl, post, config);
-          if (nativeQwenResult.rawText) {
-            ocrText += `\n${nativeQwenResult.rawText}`;
-          }
-          if (Array.isArray(nativeQwenResult.rows) && nativeQwenResult.rows.length > 0) {
-            qwenRows.push(...nativeQwenResult.rows);
-            nativeRowsFound = true;
-            shouldTryCompatible = shouldRunQwenCompatibleFallback(nativeQwenResult.rows);
-          }
-        } catch {
-          // Ignore native OCR failure and continue to fallback strategies.
-        }
-
-        if (shouldTryCompatible) {
-          try {
-            const compatibleQwenResult = await extractRowsWithQwenCompatibleOcr(imageUrl, post, config);
-            if (compatibleQwenResult.rawText) {
-              ocrText += `\n${compatibleQwenResult.rawText}`;
-            }
-            if (Array.isArray(compatibleQwenResult.rows) && compatibleQwenResult.rows.length > 0) {
-              qwenRows.push(...compatibleQwenResult.rows);
-              nativeRowsFound = true;
-            }
-          } catch {
-            // Ignore remote OCR failure and fall back to local OCR.
-          }
-        }
-
-        if (nativeRowsFound) {
-          continue;
-        }
-      }
-
-      if (explicitQwenOnly) {
+    const ocrRows = [];
+    for (const result of imageResults) {
+      if (!result) {
         continue;
       }
-
-      try {
-        const text = await extractTextWithOcr(imageUrl, post, {
-          ...config,
-          ocrProvider: "local"
-        });
-        if (!text || !text.trim()) {
-          continue;
-        }
-        ocrText += `\n${text}`;
-      } catch {
-        continue;
+      if (result.ocrText) {
+        ocrText += `\n${result.ocrText}`;
+      }
+      if (Array.isArray(result.rows) && result.rows.length > 0) {
+        ocrRows.push(...result.rows);
       }
     }
 
-    const localRows = ocrText.trim() ? extractRowsFromText(ocrText) : [];
-    if (qwenRows.length > 0 || localRows.length > 0) {
-      parsedRows = dedupeSnapshotRows([...qwenRows, ...localRows]);
+    if (ocrRows.length > 0) {
+      parsedRows = dedupeSnapshotRows(ocrRows);
     }
   }
 
