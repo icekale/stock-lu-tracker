@@ -2,7 +2,8 @@ const state = {
   snapshots: [],
   selectedSnapshotId: null,
   currentTab: "adjust",
-  monthlyChart: null
+  monthlyChart: null,
+  detailExpandedId: null
 };
 
 const els = {
@@ -20,6 +21,8 @@ const els = {
   netIndexValue: document.getElementById("netIndexValue"),
   yearStartIndexValue: document.getElementById("yearStartIndexValue"),
   holdingCount: document.getElementById("holdingCount"),
+  detailListMeta: document.getElementById("detailListMeta"),
+  detailSnapshotList: document.getElementById("detailSnapshotList"),
   monthlyNetworthChart: document.getElementById("monthlyNetworthChart"),
   monthlyChartEmpty: document.getElementById("monthlyChartEmpty")
 };
@@ -86,6 +89,45 @@ function formatIndex(value) {
     return "-";
   }
   return number.toFixed(4);
+}
+
+function formatDateTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+}
+
+function formatMonthDay(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function sourceLabel(value) {
+  const source = String(value || "").trim().toLowerCase();
+  if (source === "xueqiu") {
+    return "雪球";
+  }
+  if (source === "weibo") {
+    return "微博";
+  }
+  if (!source) {
+    return "-";
+  }
+  return source;
 }
 
 function formatDelta(value) {
@@ -397,6 +439,14 @@ function normalizeStatsText(text) {
     .trim();
 }
 
+function truncateText(value, max = 220) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.length <= max ? text : `${text.slice(0, max)}...`;
+}
+
 function toYuanByUnit(value, unit, hintText = "") {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) {
@@ -558,6 +608,327 @@ function buildRenderPayload() {
     previousPostMetrics,
     holdingCount: currentRows.length
   };
+}
+
+function summarizeNameValidation(rows) {
+  const summary = {
+    xueqiu: 0,
+    tencent: 0,
+    manual: 0,
+    unknown: 0
+  };
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const source = String(row?.nameSource || "")
+      .trim()
+      .toLowerCase();
+
+    if (source === "xueqiu") {
+      summary.xueqiu += 1;
+    } else if (source === "tencent") {
+      summary.tencent += 1;
+    } else if (source === "manual") {
+      summary.manual += 1;
+    } else {
+      summary.unknown += 1;
+    }
+  }
+
+  return summary;
+}
+
+function formatNameValidationSummary(summary) {
+  const parts = [];
+  if (summary.xueqiu > 0) {
+    parts.push(`雪球 ${summary.xueqiu}`);
+  }
+  if (summary.tencent > 0) {
+    parts.push(`腾讯 ${summary.tencent}`);
+  }
+  if (summary.manual > 0) {
+    parts.push(`人工 ${summary.manual}`);
+  }
+  if (summary.unknown > 0) {
+    parts.push(`待确认 ${summary.unknown}`);
+  }
+  return parts.length > 0 ? parts.join(" / ") : "未记录";
+}
+
+function summarizeSnapshotReview(rows) {
+  let needsReview = 0;
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const item = toRowModel(row);
+    if (item.qty <= 0 || item.cost === null || item.marketValue === null || item.qualityScore >= 1.15) {
+      needsReview += 1;
+    }
+  }
+
+  return {
+    needsReview
+  };
+}
+
+function buildMarketSummaryText(rows) {
+  const groups = groupRowsByMarket(rows).map((group) => `${group.label} ${group.rows.length}只`);
+  return groups.length > 0 ? groups.join(" / ") : "暂无分组";
+}
+
+function buildSnapshotSummaryHtml(snapshot, rows, postMetrics) {
+  const review = summarizeSnapshotReview(snapshot?.rows || []);
+  const validation = summarizeNameValidation(snapshot?.rows || []);
+  const marketSummary = buildMarketSummaryText(rows);
+  const snippet = truncateText(normalizeStatsText(snapshot?.rawText || snapshot?.ocrText || ""), 220);
+  const summaryLines = [
+    {
+      label: "月份",
+      value: monthLabel(snapshot)
+    },
+    {
+      label: "发帖时间",
+      value: formatDateTime(snapshot?.postedAt)
+    },
+    {
+      label: "净值锚点",
+      value: formatCurrency(postMetrics?.cumulativeNetValue, 0)
+    },
+    {
+      label: "净值指数",
+      value: formatIndex(postMetrics?.netIndex)
+    },
+    {
+      label: "年初净值指数",
+      value: formatIndex(postMetrics?.yearStartNetIndex)
+    },
+    {
+      label: "市场分布",
+      value: marketSummary
+    },
+    {
+      label: "名称校验",
+      value: formatNameValidationSummary(validation)
+    },
+    {
+      label: "复核提示",
+      value:
+        review.needsReview > 0
+          ? `${review.needsReview} 行建议复核`
+          : "当前结构化结果整体正常"
+    }
+  ];
+
+  return `
+    <div class="detail-summary-copy">
+      <p class="detail-lead">
+        ${escapeHtml(
+          `${monthLabel(snapshot)} 快照包含 ${rows.length} 只持仓，来源 ${sourceLabel(snapshot?.source)}，自动导入 ${Number(
+            snapshot?.importedTrades
+          ) || 0} 笔交易。`
+        )}
+      </p>
+      <div class="detail-summary-list">
+        ${summaryLines
+          .map(
+            (item) => `
+              <div class="detail-summary-line">
+                <span>${escapeHtml(item.label)}</span>
+                <strong>${escapeHtml(item.value)}</strong>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+      <div class="detail-chip-row">
+        <span class="detail-chip">原图 ${escapeHtml(String(Array.isArray(snapshot?.images) ? snapshot.images.length : 0))} 张</span>
+        <span class="detail-chip">OCR ${snapshot?.ocrText ? "已识别" : "未触发"}</span>
+        <span class="detail-chip">${escapeHtml(`帖子ID ${String(snapshot?.postId || "-").replace(/^xq:|^wb:/i, "")}`)}</span>
+      </div>
+      <p class="detail-snippet">
+        ${snippet ? escapeHtml(`正文摘录：${snippet}`) : "当前月份未保存可用的原帖正文摘录。"}
+      </p>
+    </div>
+  `;
+}
+
+function buildDetailImageGridHtml(snapshot) {
+  const images = Array.isArray(snapshot?.images) ? snapshot.images : [];
+  if (images.length === 0) {
+    return `<div class="detail-empty">暂无原图</div>`;
+  }
+
+  return images
+    .map(
+      (url, index) => `
+        <a
+          class="detail-image-card"
+          href="${escapeHtml(url)}"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <img src="${escapeHtml(url)}" alt="${escapeHtml(`持仓图 ${index + 1}`)}" loading="lazy" />
+          <span class="detail-image-footer">
+            <span>持仓图 ${escapeHtml(String(index + 1))}</span>
+            <span>Open</span>
+          </span>
+        </a>
+      `
+    )
+    .join("");
+}
+
+function buildDetailInsightGridHtml(snapshot, rows) {
+  const review = summarizeSnapshotReview(snapshot?.rows || []);
+  const validation = summarizeNameValidation(snapshot?.rows || []);
+  const metrics = [
+    {
+      label: "数据来源",
+      value: sourceLabel(snapshot?.source)
+    },
+    {
+      label: "结构化持仓",
+      value: `${rows.length} 只`
+    },
+    {
+      label: "原图数量",
+      value: `${Array.isArray(snapshot?.images) ? snapshot.images.length : 0} 张`
+    },
+    {
+      label: "自动导入交易",
+      value: `${Number(snapshot?.importedTrades) || 0} 笔`
+    },
+    {
+      label: "名称校验",
+      value: formatNameValidationSummary(validation)
+    },
+    {
+      label: "待复核",
+      value: review.needsReview > 0 ? `${review.needsReview} 行` : "通过",
+      valueClass: review.needsReview > 0 ? "delta-neg" : "delta-pos"
+    }
+  ];
+
+  return metrics
+    .map(
+      (item) => `
+        <article class="detail-insight">
+          <p class="detail-insight-label">${escapeHtml(item.label)}</p>
+          <p class="detail-insight-value ${escapeHtml(item.valueClass || "")}">${escapeHtml(item.value)}</p>
+        </article>
+      `
+    )
+    .join("");
+}
+
+function buildDetailTextPanelHtml(snapshot, rows, postMetrics) {
+  const rawText = String(snapshot?.rawText || "").trim() || "暂无原帖正文";
+  const ocrText = String(snapshot?.ocrText || "").trim() || "暂无 OCR 文本";
+  const title = escapeHtml(snapshot?.title || `${monthLabel(snapshot)} 月度详情`);
+  const postedAt = escapeHtml(formatDateTime(snapshot?.postedAt));
+  const postLink = snapshot?.link
+    ? `<a class="detail-link-btn" href="${escapeHtml(snapshot.link)}" target="_blank" rel="noreferrer">查看原帖</a>`
+    : "";
+
+  return `
+    <section class="detail-panel">
+      <div class="detail-panel-head">
+        <div>
+          <h4>${title}</h4>
+          <p>${escapeHtml(`${postedAt} · ${sourceLabel(snapshot?.source)}`)}</p>
+        </div>
+        ${postLink}
+      </div>
+
+      <div class="detail-summary-panel">
+        ${buildSnapshotSummaryHtml(snapshot, rows, postMetrics)}
+      </div>
+
+      <div class="detail-text-stack">
+        <section class="detail-text-block">
+          <div class="detail-text-head">
+            <h5>原帖正文</h5>
+          </div>
+          <pre class="detail-text-pre">${escapeHtml(rawText)}</pre>
+        </section>
+        <section class="detail-text-block">
+          <div class="detail-text-head">
+            <h5>OCR 文本</h5>
+          </div>
+          <pre class="detail-text-pre">${escapeHtml(ocrText)}</pre>
+        </section>
+      </div>
+    </section>
+  `;
+}
+
+function buildSnapshotDetailItemHtml(snapshot, isOpen) {
+  const rows = buildRowsFromSnapshot(snapshot);
+  const postMetrics = parsePostMetrics(snapshot);
+  const itemId = String(snapshot?.id || "");
+  const month = monthLabel(snapshot);
+  const shortDate = formatMonthDay(snapshot?.postedAt);
+  const bodyId = `detail-item-body-${itemId}`;
+
+  return `
+    <article class="detail-item ${isOpen ? "is-open" : ""}">
+      <button
+        type="button"
+        class="detail-item-toggle"
+        data-detail-snapshot="${escapeHtml(itemId)}"
+        aria-expanded="${isOpen ? "true" : "false"}"
+        aria-controls="${escapeHtml(bodyId)}"
+      >
+        <span class="detail-item-date-wrap">
+          <strong class="detail-item-month">${escapeHtml(month)}</strong>
+          <span class="detail-item-date">${escapeHtml(shortDate)}</span>
+        </span>
+        <span class="detail-item-chevron">${isOpen ? "−" : "+"}</span>
+      </button>
+      <div id="${escapeHtml(bodyId)}" class="detail-item-body ${isOpen ? "" : "hidden"}">
+        <section class="detail-insight-grid">
+          ${buildDetailInsightGridHtml(snapshot, rows)}
+        </section>
+        <div class="detail-content-grid">
+          <section class="detail-panel">
+            <div class="detail-panel-head">
+              <div>
+                <h4>持仓原图</h4>
+                <p>${escapeHtml(
+                  Array.isArray(snapshot?.images) && snapshot.images.length > 0
+                    ? `${snapshot.images.length} 张截图 · 点击查看原图`
+                    : "当前月份没有保存原图"
+                )}</p>
+              </div>
+            </div>
+            <div class="detail-image-grid">
+              ${buildDetailImageGridHtml(snapshot)}
+            </div>
+          </section>
+          ${buildDetailTextPanelHtml(snapshot, rows, postMetrics)}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderSnapshotDetailList() {
+  if (!els.detailSnapshotList || !els.detailListMeta) {
+    return;
+  }
+
+  if (!Array.isArray(state.snapshots) || state.snapshots.length === 0) {
+    els.detailListMeta.textContent = "暂无可展开的月份详情";
+    els.detailSnapshotList.innerHTML = `<div class="detail-empty">暂无月度详情</div>`;
+    return;
+  }
+
+  const selected = currentSnapshot();
+  els.detailListMeta.textContent = selected
+    ? `当前顶部视图：${monthLabel(selected)} · 共 ${state.snapshots.length} 个月份可展开查看`
+    : `共 ${state.snapshots.length} 个月份可展开查看`;
+
+  els.detailSnapshotList.innerHTML = state.snapshots
+    .map((snapshot) => buildSnapshotDetailItemHtml(snapshot, state.detailExpandedId === snapshot.id))
+    .join("");
 }
 
 function renderMonthSelect() {
@@ -1006,6 +1377,7 @@ function renderAll() {
   renderOpenTable(payload.openRows);
   renderCloseTable(payload.closeRows);
   renderLatestTable(payload.currentRows);
+  renderSnapshotDetailList();
   renderTabState();
   renderMonthlyChart();
 }
@@ -1024,6 +1396,14 @@ async function loadData() {
 
   if (state.selectedSnapshotId && !state.snapshots.some((item) => item.id === state.selectedSnapshotId)) {
     state.selectedSnapshotId = state.snapshots[0]?.id || null;
+  }
+
+  if (!state.detailExpandedId && state.selectedSnapshotId) {
+    state.detailExpandedId = state.selectedSnapshotId;
+  }
+
+  if (state.detailExpandedId && !state.snapshots.some((item) => item.id === state.detailExpandedId)) {
+    state.detailExpandedId = state.selectedSnapshotId || state.snapshots[0]?.id || null;
   }
 
   renderAll();
@@ -1076,6 +1456,30 @@ function bindEvents() {
     els.snapshotSelect.addEventListener("change", (event) => {
       const value = String(event.target?.value || "").trim();
       state.selectedSnapshotId = value || null;
+      state.detailExpandedId = value || null;
+      renderAll();
+    });
+  }
+
+  if (els.detailSnapshotList) {
+    els.detailSnapshotList.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const button = target.closest("[data-detail-snapshot]");
+      if (!button) {
+        return;
+      }
+
+      const snapshotId = String(button.getAttribute("data-detail-snapshot") || "").trim();
+      if (!snapshotId) {
+        return;
+      }
+
+      state.selectedSnapshotId = snapshotId;
+      state.detailExpandedId = state.detailExpandedId === snapshotId ? null : snapshotId;
       renderAll();
     });
   }

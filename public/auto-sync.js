@@ -27,6 +27,16 @@ const els = {
   catalogCheckAll: document.getElementById("catalogCheckAll"),
   viewLatestBtn: document.getElementById("viewLatestBtn"),
   autoSyncText: document.getElementById("autoSyncText"),
+  systemStatusNote: document.getElementById("systemStatusNote"),
+  systemStatusGrid: document.getElementById("systemStatusGrid"),
+  systemRuntimeStatus: document.getElementById("systemRuntimeStatus"),
+  systemLastSuccess: document.getElementById("systemLastSuccess"),
+  systemLatestMonth: document.getElementById("systemLatestMonth"),
+  systemSnapshotCount: document.getElementById("systemSnapshotCount"),
+  systemImportedTrades: document.getElementById("systemImportedTrades"),
+  systemOcrStatus: document.getElementById("systemOcrStatus"),
+  systemCredentialStatus: document.getElementById("systemCredentialStatus"),
+  systemLastError: document.getElementById("systemLastError"),
   latestSnapshotMeta: document.getElementById("latestSnapshotMeta"),
   masterRowsBody: document.getElementById("masterRowsBody"),
   syncLogsBody: document.getElementById("syncLogsBody"),
@@ -186,6 +196,16 @@ function formatSourceLabel(value) {
     return "双源";
   }
   return value || "-";
+}
+
+function formatOcrProviderLabel(value) {
+  if (value === "qwen") {
+    return "Qwen OCR";
+  }
+  if (value === "local") {
+    return "本地 Tesseract";
+  }
+  return "自动模式";
 }
 
 function formatNameSourceLabel(value) {
@@ -588,6 +608,16 @@ function setActionBusy(isBusy) {
     });
 }
 
+function setStatusCardTone(element, tone) {
+  const card = element?.closest?.(".system-status-card");
+  if (!card) {
+    return;
+  }
+
+  card.classList.remove("tone-ok", "tone-warn", "tone-err", "tone-neutral");
+  card.classList.add(tone || "tone-neutral");
+}
+
 function resolveAutoTrackingResultStatus(result, successPrefix) {
   if (result?.error) {
     return {
@@ -652,6 +682,108 @@ function renderForm() {
   const runText = runtime.lastRunAt ? `最近执行: ${formatDateTime(runtime.lastRunAt)}` : "尚未执行";
   const errText = runtime.lastError ? ` | 最近错误: ${runtime.lastError}` : "";
   setStatus(`${cookieText} | ${runText}${errText}`, runtime.lastError ? "err" : "ok");
+}
+
+function renderSystemStatus() {
+  if (!els.systemStatusGrid) {
+    return;
+  }
+
+  const config = state.autoTracking?.config || {};
+  const runtime = state.autoTracking?.runtime || {};
+  const latestSnapshot = state.latestSnapshot || state.snapshots[0] || null;
+  const totalSnapshots = Number(runtime.totalImportedSnapshots) || state.snapshots.length || 0;
+  const totalImportedTrades = Number(runtime.totalImportedTrades) || 0;
+  const latestMonth = latestSnapshot ? monthLabelFromTitleOrDate(latestSnapshot.title, latestSnapshot.postedAt) : "-";
+  const latestRowCount = Array.isArray(latestSnapshot?.rows) ? latestSnapshot.rows.length : getSnapshotRowCount(latestSnapshot);
+  const anomalySummary = state.anomalyReport?.summary || {};
+  const issueRowCount = Number(anomalySummary.issueRowCount) || 0;
+  const manualMetricCount = (state.monthlyUpdates || []).filter((item) => hasManualMetrics(item.manualMetrics)).length;
+
+  let runtimeText = "已暂停";
+  let runtimeTone = "tone-warn";
+  if (runtime.lastError) {
+    runtimeText = "存在异常";
+    runtimeTone = "tone-err";
+  } else if (config.enabled) {
+    runtimeText = "运行正常";
+    runtimeTone = "tone-ok";
+  }
+
+  const ocrText = config.ocrEnabled
+    ? `${formatOcrProviderLabel(config.ocrProvider)} / ${Number(config.ocrMaxImagesPerPost) || 1} 张`
+    : "已关闭";
+  const credentialText = [
+    `雪球 ${config.hasXueqiuCookie ? "已配" : "未配"}`,
+    `微博 ${config.hasWeiboCookie ? "已配" : "未配"}`,
+    `Qwen ${config.hasQwenApiKey ? "已配" : "未配"}`
+  ].join(" / ");
+  const noteParts = [
+    runtime.lastRunAt ? `最近执行 ${formatDateTime(runtime.lastRunAt)}` : "尚未执行",
+    runtime.nextRunAt ? `下次 ${formatDateTime(runtime.nextRunAt)}` : config.enabled ? "等待下一轮调度" : "自动同步已关闭",
+    `月度指标 ${state.monthlyUpdates.length} 条`,
+    issueRowCount > 0 ? `待复核 ${issueRowCount} 行` : "异常检查正常"
+  ];
+
+  if (els.systemStatusNote) {
+    els.systemStatusNote.textContent = noteParts.join(" · ");
+  }
+  if (els.systemRuntimeStatus) {
+    els.systemRuntimeStatus.textContent = runtimeText;
+    setStatusCardTone(els.systemRuntimeStatus, runtimeTone);
+  }
+  if (els.systemLastSuccess) {
+    els.systemLastSuccess.textContent = formatDateTime(runtime.lastSuccessAt);
+    setStatusCardTone(els.systemLastSuccess, runtime.lastSuccessAt ? "tone-ok" : "tone-warn");
+  }
+  if (els.systemLatestMonth) {
+    els.systemLatestMonth.textContent = latestMonth;
+    setStatusCardTone(els.systemLatestMonth, latestSnapshot ? "tone-ok" : "tone-warn");
+  }
+  if (els.systemSnapshotCount) {
+    els.systemSnapshotCount.textContent = `${totalSnapshots} 条`;
+    setStatusCardTone(els.systemSnapshotCount, totalSnapshots > 0 ? "tone-ok" : "tone-warn");
+  }
+  if (els.systemImportedTrades) {
+    els.systemImportedTrades.textContent = `${totalImportedTrades} 笔`;
+    setStatusCardTone(els.systemImportedTrades, totalImportedTrades > 0 ? "tone-ok" : "tone-neutral");
+  }
+  if (els.systemOcrStatus) {
+    els.systemOcrStatus.textContent = ocrText;
+    setStatusCardTone(els.systemOcrStatus, config.ocrEnabled ? "tone-ok" : "tone-warn");
+  }
+  if (els.systemCredentialStatus) {
+    els.systemCredentialStatus.textContent = credentialText;
+    setStatusCardTone(
+      els.systemCredentialStatus,
+      config.hasXueqiuCookie || config.hasWeiboCookie || config.hasQwenApiKey ? "tone-ok" : "tone-warn"
+    );
+  }
+  if (els.systemLastError) {
+    els.systemLastError.textContent = runtime.lastError || "当前无错误记录";
+    setStatusCardTone(els.systemLastError, runtime.lastError ? "tone-err" : "tone-ok");
+  }
+
+  const cardMetaMap = new Map([
+    [els.systemRuntimeStatus, config.enabled ? "自动同步已开启" : "自动同步已关闭"],
+    [els.systemLastSuccess, runtime.lastRunAt ? `最近执行 ${formatDateTime(runtime.lastRunAt)}` : "尚未触发抓取"],
+    [
+      els.systemLatestMonth,
+      latestSnapshot ? `${formatSourceLabel(latestSnapshot.source)} · ${latestRowCount || 0} 行结构化持仓` : "尚未导入最新月份"
+    ],
+    [els.systemSnapshotCount, `当前历史列表 ${state.snapshots.length} 条`],
+    [els.systemImportedTrades, manualMetricCount > 0 ? `人工校正 ${manualMetricCount} 条` : "暂无人工校正记录"],
+    [els.systemOcrStatus, config.ocrEnabled ? `每帖最多识别 ${Number(config.ocrMaxImagesPerPost) || 1} 张图片` : "当前不会执行 OCR"],
+    [els.systemCredentialStatus, `${Number(config.pinnedPostUrls?.length) || 0} 条置顶链接已配置`],
+    [els.systemLastError, runtime.lastError ? "建议检查 Cookie、标题规则或 OCR 结果" : "最近导入链路运行稳定"]
+  ]);
+
+  for (const [element, text] of cardMetaMap.entries()) {
+    const meta = element?.closest?.(".system-status-card")?.querySelector(".system-status-meta");
+    if (meta && !element?.matches?.("#systemLastError")) {
+      meta.textContent = text;
+    }
+  }
 }
 
 function renderSnapshot() {
@@ -1059,6 +1191,7 @@ function renderMonthlyMetrics() {
 
 function renderAll() {
   renderForm();
+  renderSystemStatus();
   renderSnapshot();
   renderLogs();
   renderCatalog();

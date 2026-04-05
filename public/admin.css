@@ -149,6 +149,10 @@ body.admin-page {
   padding: 18px 20px;
 }
 
+.panel[id] {
+  scroll-margin-top: 72px;
+}
+
 .admin-page .app-shell {
   margin: 18px auto 28px;
   gap: 18px;
@@ -317,6 +321,131 @@ h1 {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
+}
+
+.system-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-quick-nav-panel {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.admin-quick-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.quick-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  color: #394252;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: 0.2s ease;
+}
+
+.quick-nav-link:hover {
+  border-color: rgba(0, 113, 227, 0.16);
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--blue);
+  transform: translateY(-1px);
+}
+
+.panel[id]:target {
+  border-color: rgba(0, 113, 227, 0.18);
+  box-shadow:
+    0 12px 34px rgba(15, 23, 42, 0.08),
+    0 0 0 3px rgba(0, 113, 227, 0.08);
+}
+
+.system-status-card {
+  min-height: 142px;
+  padding: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.88), transparent 40%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 249, 252, 0.96));
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.system-status-card-wide {
+  grid-column: span 2;
+  min-height: 120px;
+}
+
+.system-status-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.system-status-value {
+  margin: 0;
+  color: #1d1d1f;
+  font-size: clamp(1.08rem, 1.8vw, 1.42rem);
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  word-break: break-word;
+}
+
+.system-status-copy {
+  margin: 0;
+  color: #2f3642;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.system-status-meta {
+  margin: 0;
+  color: #7b8290;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.system-status-card.tone-ok {
+  border-color: rgba(31, 157, 85, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.92), transparent 42%),
+    linear-gradient(180deg, rgba(239, 252, 245, 0.95), rgba(255, 255, 255, 0.98));
+}
+
+.system-status-card.tone-warn {
+  border-color: rgba(201, 120, 0, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.92), transparent 42%),
+    linear-gradient(180deg, rgba(255, 247, 233, 0.95), rgba(255, 255, 255, 0.98));
+}
+
+.system-status-card.tone-err {
+  border-color: rgba(214, 40, 40, 0.12);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.92), transparent 42%),
+    linear-gradient(180deg, rgba(255, 243, 243, 0.95), rgba(255, 255, 255, 0.98));
+}
+
+.system-status-card.tone-neutral {
+  border-color: rgba(0, 0, 0, 0.06);
 }
 
 .metric {
@@ -840,6 +969,10 @@ tbody tr.row-anomaly:hover {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .system-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .grid.two-col {
     grid-template-columns: 1fr;
   }
@@ -870,6 +1003,14 @@ tbody tr.row-anomaly:hover {
 
   .cards-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .system-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .system-status-card-wide {
+    grid-column: span 1;
   }
 
   .form-grid,

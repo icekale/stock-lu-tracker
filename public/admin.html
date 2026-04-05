@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/admin.css" />
     <link rel="stylesheet" href="/site-footer.css" />
   </head>
-  <body class="admin-page">
+  <body id="pageTop" class="admin-page">
     <nav class="apple-nav">
       <div class="apple-nav-inner">
         <p class="nav-brand">超级鹿鼎公持仓自动跟踪</p>
@@ -19,7 +19,7 @@
     </nav>
 
     <main class="app-shell config-shell">
-      <section class="panel config-panel">
+      <section class="panel config-panel" id="admin-config">
         <div class="panel-head">
           <h2>自动抓取配置</h2>
           <p>超级鹿鼎公</p>
@@ -128,8 +128,73 @@
         </form>
       </section>
 
+      <section class="panel system-status-panel" id="admin-status">
+        <div class="panel-head">
+          <h2>系统状态</h2>
+          <p id="systemStatusNote">载入中...</p>
+        </div>
+        <div id="systemStatusGrid" class="system-status-grid">
+          <article class="system-status-card">
+            <p class="system-status-label">运行状态</p>
+            <h3 id="systemRuntimeStatus" class="system-status-value">-</h3>
+            <p class="system-status-meta">自动抓取任务当前状态</p>
+          </article>
+          <article class="system-status-card">
+            <p class="system-status-label">最近成功</p>
+            <h3 id="systemLastSuccess" class="system-status-value">-</h3>
+            <p class="system-status-meta">最后一次成功导入时间</p>
+          </article>
+          <article class="system-status-card">
+            <p class="system-status-label">最新月份</p>
+            <h3 id="systemLatestMonth" class="system-status-value">-</h3>
+            <p class="system-status-meta">当前最新持仓快照月份</p>
+          </article>
+          <article class="system-status-card">
+            <p class="system-status-label">历史快照</p>
+            <h3 id="systemSnapshotCount" class="system-status-value">-</h3>
+            <p class="system-status-meta">系统内已导入的月份数</p>
+          </article>
+          <article class="system-status-card">
+            <p class="system-status-label">累计交易</p>
+            <h3 id="systemImportedTrades" class="system-status-value">-</h3>
+            <p class="system-status-meta">累计写入的自动导入交易</p>
+          </article>
+          <article class="system-status-card">
+            <p class="system-status-label">OCR 状态</p>
+            <h3 id="systemOcrStatus" class="system-status-value">-</h3>
+            <p class="system-status-meta">识别引擎与图片上限配置</p>
+          </article>
+          <article class="system-status-card">
+            <p class="system-status-label">凭证状态</p>
+            <h3 id="systemCredentialStatus" class="system-status-value">-</h3>
+            <p class="system-status-meta">雪球 / 微博 / Qwen 凭证配置</p>
+          </article>
+          <article class="system-status-card system-status-card-wide">
+            <p class="system-status-label">最近错误</p>
+            <p id="systemLastError" class="system-status-copy">-</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel admin-quick-nav-panel">
+        <div class="panel-head">
+          <h2>快速跳转</h2>
+          <p>长页面可直接定位到目标模块</p>
+        </div>
+        <nav class="admin-quick-nav" aria-label="后台模块导航">
+          <a class="quick-nav-link" href="#admin-config">抓取配置</a>
+          <a class="quick-nav-link" href="#admin-status">系统状态</a>
+          <a class="quick-nav-link" href="#admin-latest">最新持仓</a>
+          <a class="quick-nav-link" href="#admin-logs">同步日志</a>
+          <a class="quick-nav-link" href="#admin-catalog">月份目录</a>
+          <a class="quick-nav-link" href="#admin-history">历史快照</a>
+          <a class="quick-nav-link" href="#admin-anomalies">异常检查</a>
+          <a class="quick-nav-link" href="#admin-metrics">月度指标</a>
+        </nav>
+      </section>
+
       <section class="grid two-col result-grid">
-        <section class="panel">
+        <section class="panel" id="admin-latest">
           <div class="panel-head">
             <h2>最新抓取持仓</h2>
             <p id="latestSnapshotMeta">暂无抓取结果</p>
@@ -154,7 +219,7 @@
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="admin-logs">
           <div class="panel-head">
             <h2>同步日志</h2>
             <p>最近 20 条</p>
@@ -175,7 +240,7 @@
       </section>
 
       <section class="grid two-col result-grid">
-        <section class="panel">
+        <section class="panel" id="admin-catalog">
           <div class="panel-head">
             <h2>雪球月度帖子目录（可选择导入）</h2>
             <p id="catalogMeta">未加载</p>
@@ -202,7 +267,7 @@
           </div>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="admin-history">
           <div class="panel-head">
             <h2>已导入历史快照（可切换查看）</h2>
             <p id="snapshotHistoryMeta">载入中...</p>
@@ -227,7 +292,7 @@
         </section>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="admin-anomalies">
         <div class="panel-head">
           <h2>异常快照检查</h2>
           <p id="anomalyMeta">载入中...</p>
@@ -248,7 +313,7 @@
       </div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="admin-metrics">
         <div class="panel-head">
           <h2>月度指标校正</h2>
           <p id="monthlyMetricMeta">载入中...</p>
@@ -292,7 +357,7 @@
         <div class="site-footer-meta">
           <span class="site-footer-item" data-footer-author data-fallback="Kale">Kale</span>
           <span class="site-footer-sep">·</span>
-          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.13">v0.1.13</span>
+          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.14">v0.1.14</span>
           <span class="site-footer-sep">·</span>
           <a
             class="site-footer-link"
@@ -320,6 +385,8 @@
         </div>
       </div>
     </footer>
+
+    <a class="page-top-button" href="#pageTop" aria-label="回到顶部" title="回到顶部">↑</a>
 
     <script src="/site-footer.js"></script>
     <script src="/auto-sync.js"></script>

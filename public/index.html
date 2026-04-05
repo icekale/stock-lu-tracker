@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/replica.css" />
     <link rel="stylesheet" href="/site-footer.css" />
   </head>
-  <body class="replica-body home-page">
+  <body id="pageTop" class="replica-body home-page">
     <nav class="apple-nav">
       <div class="apple-nav-inner">
         <p class="nav-brand">超级鹿鼎公持仓自动跟踪</p>
@@ -170,6 +170,17 @@
           <canvas id="monthlyNetworthChart"></canvas>
         </div>
       </section>
+
+      <section class="replica-card detail-list-card">
+        <header class="detail-list-head">
+          <div>
+            <p class="detail-eyebrow">Snapshot Detail</p>
+            <h3>月度详情列表</h3>
+            <p id="detailListMeta">按月份与日期展开查看原帖、截图与 OCR 依据</p>
+          </div>
+        </header>
+        <div id="detailSnapshotList" class="detail-list"></div>
+      </section>
     </main>
 
     <footer class="site-footer site-footer-home" data-site-footer>
@@ -177,7 +188,7 @@
         <div class="site-footer-meta">
           <span class="site-footer-item" data-footer-author data-fallback="Kale">Kale</span>
           <span class="site-footer-sep">·</span>
-          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.13">v0.1.13</span>
+          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.14">v0.1.14</span>
           <span class="site-footer-sep">·</span>
           <a
             class="site-footer-link"
@@ -205,6 +216,8 @@
         </div>
       </div>
     </footer>
+
+    <a class="page-top-button" href="#pageTop" aria-label="回到顶部" title="回到顶部">↑</a>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="/site-footer.js"></script>
