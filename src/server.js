@@ -2185,7 +2185,10 @@ ensureStore()
       console.error("Auto tracking startup error:", error.message);
     });
 
-    app.listen(PORT, () => {
+    app.listen(PORT, (error) => {
+      if (error) {
+        throw error;
+      }
       console.log(`Stock tracker running at http://localhost:${PORT}`);
     });
   })
