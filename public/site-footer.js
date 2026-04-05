@@ -10,7 +10,7 @@ async function bootstrapSiteFooter() {
 
   const fallbackMeta = {
     author: authorEl?.getAttribute("data-fallback") || "Kale",
-    versionLabel: versionEl?.getAttribute("data-fallback") || "v0.1.8",
+    versionLabel: versionEl?.getAttribute("data-fallback") || "v0.1.9",
     repositoryUrl: githubEl?.getAttribute("href") || "https://github.com/icekale/stock-lu-tracker",
     repositoryLabel: githubEl?.getAttribute("data-fallback") || "icekale/stock-lu-tracker"
   };
