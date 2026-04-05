@@ -2,7 +2,7 @@
 
 适用场景：
 
-- 已将镜像升级到新版本，例如 `icekale/stock-lu-tracker:v0.1.11`
+- 已将镜像升级到新版本，例如 `icekale/stock-lu-tracker:v0.1.12`
 - 已在 Unraid Compose Manager 或模板中完成拉取与重建
 - 数据目录仍沿用原有挂载，例如 `/mnt/user/appdata/stock-lu/data`
 
@@ -22,7 +22,7 @@ curl http://127.0.0.1:8787/api/app-meta
 
 - 容器状态为 `Up`
 - 日志里没有持续重启、权限报错、端口占用报错
-- `/api/app-meta` 返回的 `versionLabel` 为当前目标版本，例如 `v0.1.11`
+- `/api/app-meta` 返回的 `versionLabel` 为当前目标版本，例如 `v0.1.12`
 
 如果版本不对：
 

@@ -7,10 +7,11 @@ async function bootstrapSiteFooter() {
   const authorEl = footer.querySelector("[data-footer-author]");
   const versionEl = footer.querySelector("[data-footer-version]");
   const githubEl = footer.querySelector("[data-footer-github]");
+  const githubTextEl = githubEl?.querySelector(".site-footer-sr-only");
 
   const fallbackMeta = {
     author: authorEl?.getAttribute("data-fallback") || "Kale",
-    versionLabel: versionEl?.getAttribute("data-fallback") || "v0.1.11",
+    versionLabel: versionEl?.getAttribute("data-fallback") || "v0.1.12",
     repositoryUrl: githubEl?.getAttribute("href") || "https://github.com/icekale/stock-lu-tracker",
     repositoryLabel: githubEl?.getAttribute("data-fallback") || "icekale/stock-lu-tracker"
   };
@@ -41,7 +42,11 @@ async function bootstrapSiteFooter() {
     }
     if (githubEl) {
       githubEl.href = repositoryUrl;
-      githubEl.textContent = `GitHub：${repositoryLabel}`;
+      githubEl.setAttribute("aria-label", `GitHub：${repositoryLabel}`);
+      githubEl.setAttribute("title", `GitHub：${repositoryLabel}`);
+    }
+    if (githubTextEl) {
+      githubTextEl.textContent = `GitHub：${repositoryLabel}`;
     }
   } catch (_error) {
     if (authorEl) {
@@ -52,7 +57,11 @@ async function bootstrapSiteFooter() {
     }
     if (githubEl) {
       githubEl.href = fallbackMeta.repositoryUrl;
-      githubEl.textContent = `GitHub：${fallbackMeta.repositoryLabel}`;
+      githubEl.setAttribute("aria-label", `GitHub：${fallbackMeta.repositoryLabel}`);
+      githubEl.setAttribute("title", `GitHub：${fallbackMeta.repositoryLabel}`);
+    }
+    if (githubTextEl) {
+      githubTextEl.textContent = `GitHub：${fallbackMeta.repositoryLabel}`;
     }
   }
 }

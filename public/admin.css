@@ -81,6 +81,10 @@ body.admin-page {
   font-weight: 600;
   letter-spacing: 0.02em;
   color: #111;
+  max-width: min(62vw, 520px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-subtitle {
@@ -93,6 +97,7 @@ body.admin-page {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .nav-link-btn {
@@ -863,6 +868,11 @@ tbody tr.row-anomaly:hover {
   .apple-nav-inner {
     width: 95vw;
     height: 48px;
+  }
+
+  .nav-brand {
+    max-width: calc(100vw - 132px);
+    font-size: 0.8rem;
   }
 
   .nav-subtitle {
