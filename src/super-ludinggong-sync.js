@@ -1,6 +1,7 @@
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
+const { createHash } = require("node:crypto");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 
@@ -116,7 +117,18 @@ const QWEN_NATIVE_OCR_TIMEOUT_MS = clampNumber(process.env.QWEN_NATIVE_OCR_TIMEO
 const OCR_CACHE_MAX_ITEMS = clampNumber(process.env.OCR_CACHE_MAX_ITEMS, 1200, 100, 10000);
 const OCR_CACHE_TTL_MINUTES = clampNumber(process.env.OCR_CACHE_TTL_MINUTES, 24 * 60, 10, 14 * 24 * 60);
 const OCR_CACHE_TTL_MS = OCR_CACHE_TTL_MINUTES * 60 * 1000;
+const SNAPSHOT_PARSE_CONCURRENCY = clampNumber(process.env.SNAPSHOT_PARSE_CONCURRENCY, 3, 1, 6);
+const OCR_DISK_CACHE_ENABLED = !["0", "false", "no", "off"].includes(
+  String(process.env.OCR_DISK_CACHE_ENABLED || "true").trim().toLowerCase()
+);
+const OCR_CACHE_DIR = path.join(process.cwd(), "data", "ocr-cache");
+const OCR_DISK_CACHE_PRUNE_INTERVAL_MS = 30 * 60 * 1000;
 const ocrTextCache = new Map();
+let localOcrQueue = Promise.resolve();
+let ocrDiskCacheInitPromise = null;
+let ocrDiskCacheWriteQueue = Promise.resolve();
+let ocrDiskCachePrunePromise = null;
+let lastOcrDiskCachePruneAt = 0;
 
 function toDateIso(value) {
   if (!value && value !== 0) {
@@ -1840,6 +1852,11 @@ function buildOcrCacheKey(imageUrl, post, provider = "local") {
   return `${source}|${engine}|${url}`;
 }
 
+function buildOcrCacheFilePath(cacheKey) {
+  const digest = createHash("sha256").update(String(cacheKey || "")).digest("hex");
+  return path.join(OCR_CACHE_DIR, `${digest}.txt`);
+}
+
 function shouldPreferQwenOcr(config) {
   const provider = normalizeOcrProvider(config?.ocrProvider);
   if (provider === "local") {
@@ -2769,7 +2786,7 @@ async function prepareImageForQwenOcr(localPath) {
 
 async function extractRowsWithQwenNativeOcr(imageUrl, post, config) {
   const cacheKey = buildOcrCacheKey(imageUrl, post, "qwen-native");
-  const cached = getCachedOcrText(cacheKey);
+  const cached = await getCachedOcrText(cacheKey);
   if (cached) {
     const cachedBlocks = parseQwenOcrBlocksFromText(cached);
     return {
@@ -2899,7 +2916,7 @@ function parseQwenSnapshotRowsFromContent(content) {
 
 async function extractRowsWithQwenCompatibleOcr(imageUrl, post, config) {
   const cacheKey = buildOcrCacheKey(imageUrl, post, "qwen-json");
-  const cached = getCachedOcrText(cacheKey);
+  const cached = await getCachedOcrText(cacheKey);
   if (cached) {
     return {
       rows: parseQwenSnapshotRowsFromContent(cached),
@@ -2958,7 +2975,82 @@ function pruneOcrTextCache(now = Date.now()) {
   }
 }
 
-function getCachedOcrText(cacheKey) {
+async function ensureOcrDiskCacheDir() {
+  if (!OCR_DISK_CACHE_ENABLED) {
+    return;
+  }
+
+  if (!ocrDiskCacheInitPromise) {
+    ocrDiskCacheInitPromise = fs.mkdir(OCR_CACHE_DIR, { recursive: true }).finally(() => {
+      ocrDiskCacheInitPromise = null;
+    });
+  }
+
+  await ocrDiskCacheInitPromise;
+}
+
+async function pruneOcrDiskCache(now = Date.now()) {
+  if (!OCR_DISK_CACHE_ENABLED) {
+    return;
+  }
+
+  await ensureOcrDiskCacheDir();
+  const entries = await fs.readdir(OCR_CACHE_DIR, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    const filePath = path.join(OCR_CACHE_DIR, entry.name);
+    let stats;
+    try {
+      stats = await fs.stat(filePath);
+    } catch {
+      continue;
+    }
+
+    if (!Number.isFinite(stats.mtimeMs) || now - stats.mtimeMs > OCR_CACHE_TTL_MS) {
+      await fs.unlink(filePath).catch(() => {});
+      continue;
+    }
+
+    files.push({
+      path: filePath,
+      mtimeMs: stats.mtimeMs
+    });
+  }
+
+  if (files.length <= OCR_CACHE_MAX_ITEMS) {
+    return;
+  }
+
+  const removeCount = files.length - OCR_CACHE_MAX_ITEMS;
+  const sorted = files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  await Promise.all(sorted.slice(0, removeCount).map((item) => fs.unlink(item.path).catch(() => {})));
+}
+
+function scheduleOcrDiskCachePrune(now = Date.now()) {
+  if (!OCR_DISK_CACHE_ENABLED) {
+    return;
+  }
+
+  if (ocrDiskCachePrunePromise || now - lastOcrDiskCachePruneAt < OCR_DISK_CACHE_PRUNE_INTERVAL_MS) {
+    return;
+  }
+
+  ocrDiskCachePrunePromise = pruneOcrDiskCache(now)
+    .catch((error) => {
+      console.error("Failed to prune OCR disk cache:", error.message);
+    })
+    .finally(() => {
+      lastOcrDiskCachePruneAt = Date.now();
+      ocrDiskCachePrunePromise = null;
+    });
+}
+
+async function getCachedOcrText(cacheKey) {
   if (!cacheKey) {
     return null;
   }
@@ -2972,11 +3064,39 @@ function getCachedOcrText(cacheKey) {
   const createdAt = Number(entry.createdAt) || 0;
   if (!createdAt || now - createdAt > OCR_CACHE_TTL_MS) {
     ocrTextCache.delete(cacheKey);
+  } else {
+    entry.usedAt = now;
+    return String(entry.text || "");
+  }
+
+  if (!OCR_DISK_CACHE_ENABLED) {
     return null;
   }
 
-  entry.usedAt = now;
-  return String(entry.text || "");
+  try {
+    await ensureOcrDiskCacheDir();
+    const filePath = buildOcrCacheFilePath(cacheKey);
+    const stats = await fs.stat(filePath);
+    if (!Number.isFinite(stats.mtimeMs) || now - stats.mtimeMs > OCR_CACHE_TTL_MS) {
+      await fs.unlink(filePath).catch(() => {});
+      return null;
+    }
+
+    const text = await fs.readFile(filePath, "utf8");
+    if (!String(text || "").trim()) {
+      return null;
+    }
+
+    ocrTextCache.set(cacheKey, {
+      text,
+      createdAt: stats.mtimeMs,
+      usedAt: now
+    });
+    pruneOcrTextCache(now);
+    return text;
+  } catch {
+    return null;
+  }
 }
 
 function setCachedOcrText(cacheKey, text) {
@@ -2992,6 +3112,26 @@ function setCachedOcrText(cacheKey, text) {
     usedAt: now
   });
   pruneOcrTextCache(now);
+  scheduleOcrDiskCachePrune(now);
+
+  if (!OCR_DISK_CACHE_ENABLED) {
+    return;
+  }
+
+  const filePath = buildOcrCacheFilePath(cacheKey);
+  const tmpPath = `${filePath}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
+
+  ocrDiskCacheWriteQueue = ocrDiskCacheWriteQueue
+    .catch(() => {})
+    .then(async () => {
+      await ensureOcrDiskCacheDir();
+      await fs.writeFile(tmpPath, normalizedText, "utf8");
+      await fs.rename(tmpPath, filePath);
+    })
+    .catch((error) => {
+      console.error("Failed to write OCR disk cache:", error.message);
+      return fs.unlink(tmpPath).catch(() => {});
+    });
 }
 
 async function mapWithConcurrency(list, concurrency, worker) {
@@ -3192,25 +3332,30 @@ async function downloadImageToTempFile(imageUrl, post, config) {
 }
 
 async function extractTextWithLocalOcr(localPath, scaledPath) {
-  const worker = await getOcrWorker();
-  const texts = [];
+  const run = localOcrQueue.then(async () => {
+    const worker = await getOcrWorker();
+    const texts = [];
 
-  const baseResult = await worker.recognize(localPath);
-  const baseText = String(baseResult?.data?.text || "");
-  texts.push(baseText);
-  const baseRows = extractRowsFromText(baseText);
+    const baseResult = await worker.recognize(localPath);
+    const baseText = String(baseResult?.data?.text || "");
+    texts.push(baseText);
+    const baseRows = extractRowsFromText(baseText);
 
-  if (baseRows.length === 0) {
-    try {
-      await execFileAsync("sips", ["-Z", "1600", localPath, "--out", scaledPath]);
-      const scaledResult = await worker.recognize(scaledPath);
-      texts.push(String(scaledResult?.data?.text || ""));
-    } catch {
-      // Ignore platform/image preprocessing failures and keep base OCR output.
+    if (baseRows.length === 0) {
+      try {
+        await execFileAsync("sips", ["-Z", "1600", localPath, "--out", scaledPath]);
+        const scaledResult = await worker.recognize(scaledPath);
+        texts.push(String(scaledResult?.data?.text || ""));
+      } catch {
+        // Ignore platform/image preprocessing failures and keep base OCR output.
+      }
     }
-  }
 
-  return texts.filter(Boolean).join("\n");
+    return texts.filter(Boolean).join("\n");
+  });
+
+  localOcrQueue = run.catch(() => {});
+  return run;
 }
 
 async function extractTextWithOcr(imageUrl, post, config) {
@@ -3219,12 +3364,12 @@ async function extractTextWithOcr(imageUrl, post, config) {
   const localCacheKey = buildOcrCacheKey(imageUrl, post, "local");
 
   if (preferQwen) {
-    const cachedQwen = getCachedOcrText(qwenCacheKey);
+    const cachedQwen = await getCachedOcrText(qwenCacheKey);
     if (cachedQwen) {
       return cachedQwen;
     }
   } else {
-    const cachedLocal = getCachedOcrText(localCacheKey);
+    const cachedLocal = await getCachedOcrText(localCacheKey);
     if (cachedLocal) {
       return cachedLocal;
     }
@@ -3249,7 +3394,7 @@ async function extractTextWithOcr(imageUrl, post, config) {
       }
     }
 
-    const cachedLocal = getCachedOcrText(localCacheKey);
+    const cachedLocal = await getCachedOcrText(localCacheKey);
     if (cachedLocal) {
       return cachedLocal;
     }
@@ -3575,7 +3720,7 @@ async function collectSuperLudinggongSnapshots(inputConfig, processedPostIds = [
     return bTime - aTime;
   });
 
-  const snapshots = [];
+  const parseCandidates = [];
   let filteredByTitle = 0;
 
   for (const post of sorted) {
@@ -3601,14 +3746,23 @@ async function collectSuperLudinggongSnapshots(inputConfig, processedPostIds = [
     if (!shouldTryParse) {
       continue;
     }
-
-    const snapshot = await parseSnapshotFromPost(post, config);
-    if (!snapshot) {
-      continue;
-    }
-
-    snapshots.push(snapshot);
+    parseCandidates.push(post);
   }
+
+  if (parseCandidates.length > 1) {
+    addLog("info", `开始解析候选帖子: ${parseCandidates.length} 条，并发 ${SNAPSHOT_PARSE_CONCURRENCY}`);
+  }
+
+  const snapshots = (
+    await mapWithConcurrency(parseCandidates, SNAPSHOT_PARSE_CONCURRENCY, async (post) => {
+      try {
+        return await parseSnapshotFromPost(post, config);
+      } catch (error) {
+        addLog("warn", `帖子解析失败，已跳过: ${post.postId} | ${error.message}`);
+        return null;
+      }
+    })
+  ).filter(Boolean);
 
   if (hasTargetPostIds && snapshots.length === 0) {
     addLog("warn", `选择导入的帖子未识别到可用持仓：${targetPostIds.size} 条`);

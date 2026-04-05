@@ -3,6 +3,7 @@ const path = require("node:path");
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
+const STORE_FLUSH_DELAY_MS = Math.max(25, Number(process.env.STORE_FLUSH_DELAY_MS) || 80);
 
 const DEFAULT_STORE = {
   trades: [],
@@ -46,54 +47,47 @@ const DEFAULT_STORE = {
 };
 
 let mutationQueue = Promise.resolve();
+let storeCache = null;
+let storeLoadPromise = null;
+let flushTimer = null;
+let flushPromise = Promise.resolve();
+let dirtySinceFlush = false;
+let flushHooksRegistered = false;
+let shutdownFlushRunning = false;
 
-async function ensureStore() {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    await fs.access(STORE_PATH);
-  } catch {
-    await writeStore(DEFAULT_STORE);
-  }
-}
-
-async function readStore() {
-  await ensureStore();
-  const raw = await fs.readFile(STORE_PATH, "utf8");
-
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      ...DEFAULT_STORE,
-      ...parsed,
-      autoTracking: {
-        ...DEFAULT_STORE.autoTracking,
-        ...(parsed.autoTracking || {}),
-        config: {
-          ...DEFAULT_STORE.autoTracking.config,
-          ...(parsed.autoTracking?.config || {})
-        },
-        runtime: {
-          ...DEFAULT_STORE.autoTracking.runtime,
-          ...(parsed.autoTracking?.runtime || {})
-        },
-        processedPostIds: Array.isArray(parsed.autoTracking?.processedPostIds)
-          ? parsed.autoTracking.processedPostIds
-          : [],
-        importedTradeKeys: Array.isArray(parsed.autoTracking?.importedTradeKeys)
-          ? parsed.autoTracking.importedTradeKeys
-          : [],
-        logs: Array.isArray(parsed.autoTracking?.logs) ? parsed.autoTracking.logs : []
+function normalizeStore(parsed) {
+  return {
+    ...DEFAULT_STORE,
+    ...parsed,
+    trades: Array.isArray(parsed?.trades) ? parsed.trades : [],
+    quotes: parsed?.quotes && typeof parsed.quotes === "object" ? parsed.quotes : {},
+    snapshots: Array.isArray(parsed?.snapshots) ? parsed.snapshots : [],
+    monthlyUpdates: Array.isArray(parsed?.monthlyUpdates) ? parsed.monthlyUpdates : [],
+    autoTracking: {
+      ...DEFAULT_STORE.autoTracking,
+      ...(parsed?.autoTracking || {}),
+      config: {
+        ...DEFAULT_STORE.autoTracking.config,
+        ...(parsed?.autoTracking?.config || {})
       },
-      masterSnapshots: Array.isArray(parsed.masterSnapshots) ? parsed.masterSnapshots : [],
-      settings: {
-        ...DEFAULT_STORE.settings,
-        ...(parsed.settings || {})
-      }
-    };
-  } catch {
-    await writeStore(DEFAULT_STORE);
-    return structuredClone(DEFAULT_STORE);
-  }
+      runtime: {
+        ...DEFAULT_STORE.autoTracking.runtime,
+        ...(parsed?.autoTracking?.runtime || {})
+      },
+      processedPostIds: Array.isArray(parsed?.autoTracking?.processedPostIds)
+        ? parsed.autoTracking.processedPostIds
+        : [],
+      importedTradeKeys: Array.isArray(parsed?.autoTracking?.importedTradeKeys)
+        ? parsed.autoTracking.importedTradeKeys
+        : [],
+      logs: Array.isArray(parsed?.autoTracking?.logs) ? parsed.autoTracking.logs : []
+    },
+    masterSnapshots: Array.isArray(parsed?.masterSnapshots) ? parsed.masterSnapshots : [],
+    settings: {
+      ...DEFAULT_STORE.settings,
+      ...(parsed?.settings || {})
+    }
+  };
 }
 
 async function writeStore(store) {
@@ -103,20 +97,150 @@ async function writeStore(store) {
   await fs.rename(tmpPath, STORE_PATH);
 }
 
-async function mutateStore(mutator) {
-  let result;
-  mutationQueue = mutationQueue.then(async () => {
-    const store = await readStore();
-    result = await mutator(store);
-    await writeStore(store);
+async function loadStoreFromDisk() {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+
+  try {
+    await fs.access(STORE_PATH);
+  } catch {
+    const fallback = structuredClone(DEFAULT_STORE);
+    await writeStore(fallback);
+    return fallback;
+  }
+
+  const raw = await fs.readFile(STORE_PATH, "utf8");
+  try {
+    return normalizeStore(JSON.parse(raw));
+  } catch {
+    const fallback = structuredClone(DEFAULT_STORE);
+    await writeStore(fallback);
+    return fallback;
+  }
+}
+
+async function ensureStore() {
+  if (storeCache) {
+    return;
+  }
+
+  if (!storeLoadPromise) {
+    storeLoadPromise = loadStoreFromDisk()
+      .then((store) => {
+        storeCache = store;
+      })
+      .finally(() => {
+        storeLoadPromise = null;
+      });
+  }
+
+  await storeLoadPromise;
+}
+
+function scheduleFlush() {
+  dirtySinceFlush = true;
+  if (flushTimer) {
+    return;
+  }
+
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    flushStore().catch((error) => {
+      console.error("Failed to flush store cache:", error.message);
+    });
+  }, STORE_FLUSH_DELAY_MS);
+}
+
+async function flushStore() {
+  await ensureStore();
+
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+
+  if (!dirtySinceFlush) {
+    await flushPromise;
+    return;
+  }
+
+  const snapshot = structuredClone(storeCache);
+  dirtySinceFlush = false;
+
+  flushPromise = flushPromise.then(async () => {
+    await writeStore(snapshot);
   });
 
-  await mutationQueue;
+  try {
+    await flushPromise;
+  } finally {
+    if (dirtySinceFlush && !flushTimer) {
+      scheduleFlush();
+    }
+  }
+}
+
+function registerFlushHooks() {
+  if (flushHooksRegistered) {
+    return;
+  }
+  flushHooksRegistered = true;
+
+  process.once("beforeExit", async () => {
+    if (!dirtySinceFlush) {
+      return;
+    }
+    try {
+      await flushStore();
+    } catch (error) {
+      console.error("Failed to flush store before exit:", error.message);
+    }
+  });
+
+  const flushAndExit = (signal) => {
+    if (shutdownFlushRunning) {
+      return;
+    }
+    shutdownFlushRunning = true;
+
+    flushStore()
+      .catch((error) => {
+        console.error(`Failed to flush store on ${signal}:`, error.message);
+      })
+      .finally(() => {
+        process.exit(0);
+      });
+  };
+
+  process.once("SIGINT", () => flushAndExit("SIGINT"));
+  process.once("SIGTERM", () => flushAndExit("SIGTERM"));
+}
+
+async function readStore() {
+  await ensureStore();
+  return structuredClone(storeCache);
+}
+
+async function mutateStore(mutator) {
+  let result;
+
+  const run = mutationQueue.then(async () => {
+    await ensureStore();
+    const draft = structuredClone(storeCache);
+    result = await mutator(draft);
+    storeCache = draft;
+    scheduleFlush();
+  });
+
+  mutationQueue = run.catch(() => {});
+  await run;
   return result;
 }
 
 module.exports = {
   readStore,
   mutateStore,
-  ensureStore
+  ensureStore,
+  flushStore
 };
+
+registerFlushHooks();

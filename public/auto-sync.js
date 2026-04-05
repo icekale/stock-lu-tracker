@@ -875,19 +875,14 @@ function renderAll() {
 }
 
 async function loadData() {
-  const [autoData, snapshotsData, anomalyData, monthlyData] = await Promise.all([
-    request("/api/auto-tracking"),
-    request("/api/master-snapshots?limit=240"),
-    request("/api/auto-tracking/anomalies"),
-    request("/api/monthly-updates")
-  ]);
+  const bootstrap = await request("/api/auto-tracking/bootstrap?limit=240");
 
-  state.autoTracking = autoData.autoTracking || null;
-  state.latestSnapshot = autoData.latestSnapshot || null;
-  state.snapshots = Array.isArray(snapshotsData.snapshots) ? snapshotsData.snapshots : [];
-  state.monthlyUpdates = Array.isArray(monthlyData.updates) ? monthlyData.updates : [];
+  state.autoTracking = bootstrap.autoTracking || null;
+  state.latestSnapshot = bootstrap.latestSnapshot || null;
+  state.snapshots = Array.isArray(bootstrap.snapshots) ? bootstrap.snapshots : [];
+  state.monthlyUpdates = Array.isArray(bootstrap.monthlyUpdates?.updates) ? bootstrap.monthlyUpdates.updates : [];
   reconcileMonthlyMetricUiState();
-  state.anomalyReport = anomalyData || { summary: {}, snapshots: [] };
+  state.anomalyReport = bootstrap.anomalyReport || { summary: {}, snapshots: [] };
   state.anomalyRowsByKey = new Map();
 
   for (const snapshot of state.anomalyReport.snapshots || []) {

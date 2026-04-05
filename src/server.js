@@ -810,6 +810,57 @@ function sanitizeSnapshotCollection(snapshots, options = {}) {
   return (Array.isArray(snapshots) ? snapshots : []).map((snapshot) => sanitizeMasterSnapshotRecord(snapshot, options));
 }
 
+function stripSnapshotDiagnostics(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return snapshot;
+  }
+
+  return {
+    ...snapshot,
+    rows: Array.isArray(snapshot.rows)
+      ? snapshot.rows.map((row) => {
+          if (!row || typeof row !== "object") {
+            return row;
+          }
+          const { diagnostics, ...rest } = row;
+          return rest;
+        })
+      : []
+  };
+}
+
+function buildAnomalyReportFromSnapshots(snapshotsWithDiagnostics) {
+  const snapshots = (Array.isArray(snapshotsWithDiagnostics) ? snapshotsWithDiagnostics : [])
+    .map((snapshot) => ({
+      ...snapshot,
+      rows: (snapshot.rows || []).filter(
+        (row) => row.diagnostics && (row.diagnostics.fixes.length > 0 || row.diagnostics.issues.length > 0)
+      )
+    }))
+    .filter((snapshot) => snapshot.rows.length > 0);
+
+  const summary = snapshots.reduce(
+    (acc, snapshot) => {
+      acc.snapshotCount += 1;
+      acc.rowCount += snapshot.rows.length;
+      acc.changedRowCount += Number(snapshot.anomalySummary?.changedRowCount) || 0;
+      acc.issueRowCount += Number(snapshot.anomalySummary?.issueRowCount) || 0;
+      return acc;
+    },
+    {
+      snapshotCount: 0,
+      rowCount: 0,
+      changedRowCount: 0,
+      issueRowCount: 0
+    }
+  );
+
+  return {
+    summary,
+    snapshots
+  };
+}
+
 function mergeSnapshotMetricFields(snapshot) {
   if (!snapshot || typeof snapshot !== "object") {
     return snapshot;
@@ -1000,12 +1051,17 @@ async function backfillStoredPostMetrics() {
   });
 }
 
-function getAutoTrackingPublic(autoTrackingInput) {
+function getAutoTrackingPublic(autoTrackingInput, options = {}) {
   const autoTracking = autoTrackingInput || {};
   const config = mergeAutoTrackingConfig(autoTracking.config || {});
-  const latestSnapshot = autoTracking.latestSnapshot ? sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot) : null;
+  const includeLatestSnapshot = options.includeLatestSnapshot !== false;
+  const latestSnapshot = Object.prototype.hasOwnProperty.call(options, "latestSnapshot")
+    ? options.latestSnapshot
+    : autoTracking.latestSnapshot
+      ? sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot)
+      : null;
 
-  return {
+  const payload = {
     config: {
       enabled: Boolean(config.enabled),
       intervalMinutes: config.intervalMinutes,
@@ -1023,9 +1079,14 @@ function getAutoTrackingPublic(autoTrackingInput) {
       hasWeiboCookie: Boolean(config.weiboCookie) && !isSampleCookie(config.weiboCookie)
     },
     runtime: autoTracking.runtime || {},
-    latestSnapshot,
     recentLogs: Array.isArray(autoTracking.logs) ? autoTracking.logs.slice(0, 30) : []
   };
+
+  if (includeLatestSnapshot) {
+    payload.latestSnapshot = latestSnapshot;
+  }
+
+  return payload;
 }
 
 function appendAutoTrackingLogs(autoTracking, logs) {
@@ -1034,6 +1095,55 @@ function appendAutoTrackingLogs(autoTracking, logs) {
   }
 
   autoTracking.logs = [...logs, ...(autoTracking.logs || [])].slice(0, 200);
+}
+
+function buildPositionQuantityIndex(trades, quotes) {
+  const quantityBySymbol = new Map();
+  const { positions } = buildPortfolio(trades, quotes);
+
+  for (const position of positions) {
+    const apiSymbol = String(position?.apiSymbol || "").trim();
+    const quantity = Number(position?.quantity) || 0;
+    if (!apiSymbol || quantity <= 0) {
+      continue;
+    }
+    quantityBySymbol.set(apiSymbol, quantity);
+  }
+
+  return quantityBySymbol;
+}
+
+function getTrackedQuantity(quantityBySymbol, apiSymbol) {
+  return Number(quantityBySymbol.get(apiSymbol)) || 0;
+}
+
+function applyTrackedTrade(quantityBySymbol, trade) {
+  const apiSymbol = String(trade?.apiSymbol || "").trim();
+  if (!apiSymbol) {
+    return;
+  }
+
+  const quantity = Math.max(0, Number(trade?.quantity) || 0);
+  if (quantity <= 0) {
+    return;
+  }
+
+  const current = getTrackedQuantity(quantityBySymbol, apiSymbol);
+  const type = String(trade?.type || "").trim().toUpperCase();
+
+  if (type === "BUY") {
+    quantityBySymbol.set(apiSymbol, current + quantity);
+    return;
+  }
+
+  if (type === "SELL") {
+    const next = Math.max(0, current - quantity);
+    if (next > 0) {
+      quantityBySymbol.set(apiSymbol, next);
+    } else {
+      quantityBySymbol.delete(apiSymbol);
+    }
+  }
 }
 
 async function scheduleAutoTracking() {
@@ -1108,6 +1218,7 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
       const autoTracking = ensureAutoTrackingState(draft);
       const processedPostIds = new Set(autoTracking.processedPostIds || []);
       const importedTradeKeys = new Set(autoTracking.importedTradeKeys || []);
+      const quantityBySymbol = buildPositionQuantityIndex(draft.trades, draft.quotes);
 
       appendAutoTrackingLogs(autoTracking, syncResult.logs);
 
@@ -1158,9 +1269,7 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
           }
 
           if (row.action === "SELL") {
-            const portfolioNow = buildPortfolio(draft.trades, draft.quotes);
-            const positionNow = portfolioNow.positions.find((item) => item.apiSymbol === apiSymbol);
-            const available = Number(positionNow?.quantity) || 0;
+            const available = getTrackedQuantity(quantityBySymbol, apiSymbol);
             if (available <= 0) {
               continue;
             }
@@ -1184,6 +1293,7 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
           });
 
           draft.trades.push(trade);
+          applyTrackedTrade(quantityBySymbol, trade);
           importedTradeKeys.add(dedupeKey);
           importedTrades += 1;
           importedTradesInSnapshot += 1;
@@ -1314,6 +1424,33 @@ function normalizePostIds(input) {
     .filter((item) => /^xq:\d{6,}$/i.test(item) || /^wb:[A-Za-z0-9]{6,}$/i.test(item));
 
   return [...new Set(ids)];
+}
+
+function buildMonthlyUpdatesPayload(store) {
+  return {
+    updates: sortByRecentDate(store.monthlyUpdates || [], "postedAt"),
+    monthlyStatus: buildMonthlyStatus(store.monthlyUpdates || []),
+    links: PROFILE_LINKS
+  };
+}
+
+function buildAutoTrackingBootstrapPayload(store, options = {}) {
+  const autoTracking = ensureAutoTrackingState(store);
+  const limit = Math.max(1, Math.min(240, Number(options.limit) || 240));
+  const snapshotSource = (store.masterSnapshots || []).slice(0, limit);
+  const snapshotsWithDiagnostics = sanitizeSnapshotCollection(snapshotSource, { includeDiagnostics: true });
+  const snapshots = snapshotsWithDiagnostics.map((snapshot) => stripSnapshotDiagnostics(snapshot));
+  const latestSnapshot = snapshots[0] || sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || null);
+
+  return {
+    autoTracking: getAutoTrackingPublic(autoTracking, {
+      includeLatestSnapshot: false
+    }),
+    latestSnapshot,
+    snapshots,
+    monthlyUpdates: buildMonthlyUpdatesPayload(store),
+    anomalyReport: buildAnomalyReportFromSnapshots(snapshotsWithDiagnostics)
+  };
 }
 
 app.get("/api/health", (_req, res) => {
@@ -1520,14 +1657,7 @@ app.post("/api/snapshots", async (req, res, next) => {
 app.get("/api/monthly-updates", async (_req, res, next) => {
   try {
     const store = await readStore();
-    const updates = sortByRecentDate(store.monthlyUpdates || [], "postedAt");
-    const monthlyStatus = buildMonthlyStatus(store.monthlyUpdates || []);
-
-    res.json({
-      updates,
-      monthlyStatus,
-      links: PROFILE_LINKS
-    });
+    res.json(buildMonthlyUpdatesPayload(store));
   } catch (error) {
     next(error);
   }
@@ -1713,9 +1843,22 @@ app.get("/api/auto-tracking", async (_req, res, next) => {
     const latestSnapshot = sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null);
 
     res.json({
-      autoTracking: getAutoTrackingPublic(autoTracking),
+      autoTracking: getAutoTrackingPublic(autoTracking, { latestSnapshot }),
       latestSnapshot
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/auto-tracking/bootstrap", async (req, res, next) => {
+  try {
+    const store = await readStore();
+    res.json(
+      buildAutoTrackingBootstrapPayload(store, {
+        limit: req.query.limit
+      })
+    );
   } catch (error) {
     next(error);
   }
@@ -1946,35 +2089,10 @@ app.post("/api/auto-tracking/import-selected", async (req, res, next) => {
 app.get("/api/auto-tracking/anomalies", async (_req, res, next) => {
   try {
     const store = await readStore();
-    const snapshots = sanitizeSnapshotCollection(store.masterSnapshots || [], { includeDiagnostics: true })
-      .map((snapshot) => ({
-        ...snapshot,
-        rows: snapshot.rows.filter(
-          (row) => row.diagnostics && (row.diagnostics.fixes.length > 0 || row.diagnostics.issues.length > 0)
-        )
-      }))
-      .filter((snapshot) => snapshot.rows.length > 0);
-
-    const summary = snapshots.reduce(
-      (acc, snapshot) => {
-        acc.snapshotCount += 1;
-        acc.rowCount += snapshot.rows.length;
-        acc.changedRowCount += Number(snapshot.anomalySummary?.changedRowCount) || 0;
-        acc.issueRowCount += Number(snapshot.anomalySummary?.issueRowCount) || 0;
-        return acc;
-      },
-      {
-        snapshotCount: 0,
-        rowCount: 0,
-        changedRowCount: 0,
-        issueRowCount: 0
-      }
-    );
-
-    res.json({
-      summary,
-      snapshots
+    const snapshotsWithDiagnostics = sanitizeSnapshotCollection(store.masterSnapshots || [], {
+      includeDiagnostics: true
     });
+    res.json(buildAnomalyReportFromSnapshots(snapshotsWithDiagnostics));
   } catch (error) {
     next(error);
   }
