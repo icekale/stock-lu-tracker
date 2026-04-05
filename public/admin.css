@@ -644,6 +644,24 @@ tbody tr.row-anomaly:hover {
   color: var(--blue);
 }
 
+.tag-source-xueqiu {
+  border-color: rgba(31, 157, 85, 0.18);
+  background: #e8f8ee;
+  color: #1f8d51;
+}
+
+.tag-source-tencent {
+  border-color: rgba(0, 113, 227, 0.18);
+  background: rgba(0, 113, 227, 0.1);
+  color: var(--blue);
+}
+
+.tag-source-local {
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(246, 247, 249, 0.95);
+  color: #555b66;
+}
+
 .pos {
   color: var(--gain);
 }

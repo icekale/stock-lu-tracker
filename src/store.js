@@ -3,6 +3,7 @@ const path = require("node:path");
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const STORE_PATH = path.join(DATA_DIR, "store.json");
+const STORE_BACKUP_PATH = `${STORE_PATH}.bak`;
 const STORE_FLUSH_DELAY_MS = Math.max(25, Number(process.env.STORE_FLUSH_DELAY_MS) || 80);
 
 const DEFAULT_STORE = {
@@ -92,9 +93,34 @@ function normalizeStore(parsed) {
 
 async function writeStore(store) {
   await fs.mkdir(DATA_DIR, { recursive: true });
-  const tmpPath = `${STORE_PATH}.tmp`;
+  const tmpPath = `${STORE_PATH}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tmpPath, JSON.stringify(store, null, 2), "utf8");
   await fs.rename(tmpPath, STORE_PATH);
+
+  try {
+    await fs.copyFile(STORE_PATH, STORE_BACKUP_PATH);
+  } catch (error) {
+    console.error("Failed to update store backup:", error.message);
+  }
+}
+
+async function readStoreFile(filePath) {
+  const raw = await fs.readFile(filePath, "utf8");
+  return normalizeStore(JSON.parse(raw));
+}
+
+async function readBackupStore() {
+  try {
+    return await readStoreFile(STORE_BACKUP_PATH);
+  } catch {
+    return null;
+  }
+}
+
+async function preserveCorruptedStore() {
+  const corruptPath = path.join(DATA_DIR, `store.corrupt-${Date.now()}.json`);
+  await fs.copyFile(STORE_PATH, corruptPath);
+  return corruptPath;
 }
 
 async function loadStoreFromDisk() {
@@ -103,15 +129,36 @@ async function loadStoreFromDisk() {
   try {
     await fs.access(STORE_PATH);
   } catch {
+    const backupStore = await readBackupStore();
+    if (backupStore) {
+      console.warn("Primary store is missing, restored from backup");
+      await writeStore(backupStore);
+      return backupStore;
+    }
+
     const fallback = structuredClone(DEFAULT_STORE);
     await writeStore(fallback);
     return fallback;
   }
 
-  const raw = await fs.readFile(STORE_PATH, "utf8");
   try {
-    return normalizeStore(JSON.parse(raw));
-  } catch {
+    return await readStoreFile(STORE_PATH);
+  } catch (error) {
+    const preservedPath = await preserveCorruptedStore().catch(() => null);
+    const backupStore = await readBackupStore();
+
+    if (backupStore) {
+      console.warn(
+        `Store file is corrupted, restored from backup${preservedPath ? ` and preserved at ${preservedPath}` : ""}`
+      );
+      await writeStore(backupStore);
+      return backupStore;
+    }
+
+    console.error("Failed to parse store file:", error.message);
+    if (preservedPath) {
+      console.warn(`Corrupted store file preserved at ${preservedPath}`);
+    }
     const fallback = structuredClone(DEFAULT_STORE);
     await writeStore(fallback);
     return fallback;
@@ -166,12 +213,15 @@ async function flushStore() {
   const snapshot = structuredClone(storeCache);
   dirtySinceFlush = false;
 
-  flushPromise = flushPromise.then(async () => {
+  flushPromise = flushPromise.catch(() => {}).then(async () => {
     await writeStore(snapshot);
   });
 
   try {
     await flushPromise;
+  } catch (error) {
+    dirtySinceFlush = true;
+    throw error;
   } finally {
     if (dirtySinceFlush && !flushTimer) {
       scheduleFlush();

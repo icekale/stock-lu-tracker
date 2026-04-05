@@ -2,6 +2,8 @@ const state = {
   autoTracking: null,
   latestSnapshot: null,
   snapshots: [],
+  snapshotCache: new Map(),
+  snapshotDetailLoadingId: null,
   monthlyUpdates: [],
   monthlyMetricDrafts: new Map(),
   monthlyMetricEditingIds: new Set(),
@@ -9,7 +11,10 @@ const state = {
   catalogPosts: [],
   selectedSnapshotId: null,
   anomalyReport: null,
-  anomalyRowsByKey: new Map()
+  anomalyRowsByKey: new Map(),
+  anomalyLoading: false,
+  actionBusy: false,
+  loadVersion: 0
 };
 
 const els = {
@@ -118,6 +123,32 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function normalizeExternalUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  try {
+    const url = new URL(text, window.location.origin);
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return "";
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function buildExternalLinkHtml(value, label = "打开") {
+  const normalized = normalizeExternalUrl(value);
+  if (!normalized) {
+    return "-";
+  }
+
+  return `<a href="${escapeHtml(normalized)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`;
+}
+
 function monthLabelByDate(value) {
   if (!value) {
     return "-";
@@ -155,6 +186,31 @@ function formatSourceLabel(value) {
     return "双源";
   }
   return value || "-";
+}
+
+function formatNameSourceLabel(value) {
+  const source = String(value || "").trim().toLowerCase();
+  if (source === "xueqiu") {
+    return "雪球";
+  }
+  if (source === "tencent") {
+    return "腾讯备份";
+  }
+  if (source) {
+    return source;
+  }
+  return "本地纠错";
+}
+
+function formatNameSourceTagClass(value) {
+  const source = String(value || "").trim().toLowerCase();
+  if (source === "xueqiu") {
+    return "tag-source-xueqiu";
+  }
+  if (source === "tencent") {
+    return "tag-source-tencent";
+  }
+  return "tag-source-local";
 }
 
 function normalizePostId(value) {
@@ -240,14 +296,65 @@ function updateCatalogMeta() {
   els.catalogMeta.textContent = `共 ${state.catalogPosts.length} 条，可选 ${selectable.length} 条，已选 ${selectedCount} 条`;
 }
 
+function getSnapshotHistoryList() {
+  return Array.isArray(state.snapshots) ? state.snapshots : [];
+}
+
+function getSnapshotRowCount(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return 0;
+  }
+
+  const explicit = Number(snapshot.rowCount);
+  if (Number.isFinite(explicit) && explicit >= 0) {
+    return explicit;
+  }
+
+  return Array.isArray(snapshot.rows) ? snapshot.rows.length : 0;
+}
+
 function getViewingSnapshot() {
   if (state.selectedSnapshotId) {
-    const hit = state.snapshots.find((item) => item.id === state.selectedSnapshotId);
-    if (hit) {
-      return hit;
+    if (state.latestSnapshot && state.latestSnapshot.id === state.selectedSnapshotId) {
+      return state.latestSnapshot;
     }
+    return state.snapshotCache.get(state.selectedSnapshotId) || null;
   }
   return state.latestSnapshot;
+}
+
+function rebuildAnomalyIndex() {
+  state.anomalyRowsByKey = new Map();
+
+  for (const snapshot of state.anomalyReport?.snapshots || []) {
+    for (const row of snapshot.rows || []) {
+      if (!row.diagnostics) {
+        continue;
+      }
+      state.anomalyRowsByKey.set(buildAnomalyKey(snapshot.postId, row.symbol), row.diagnostics);
+    }
+  }
+}
+
+function syncSnapshotCache() {
+  const validIds = new Set(
+    getSnapshotHistoryList()
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean)
+  );
+  const nextCache = new Map();
+
+  for (const [id, snapshot] of state.snapshotCache.entries()) {
+    if (validIds.has(id)) {
+      nextCache.set(id, snapshot);
+    }
+  }
+
+  if (state.latestSnapshot?.id) {
+    nextCache.set(String(state.latestSnapshot.id), state.latestSnapshot);
+  }
+
+  state.snapshotCache = nextCache;
 }
 
 function hasManualMetrics(value) {
@@ -465,6 +572,45 @@ function setStatus(text, level = "info") {
   }
 }
 
+function setActionBusy(isBusy) {
+  state.actionBusy = Boolean(isBusy);
+
+  [
+    els.runAutoSyncBtn,
+    els.runBackfillBtn,
+    els.loadCatalogBtn,
+    els.importSelectedBtn,
+    els.recalculateSnapshotsBtn
+  ]
+    .filter(Boolean)
+    .forEach((button) => {
+      button.disabled = state.actionBusy;
+    });
+}
+
+function resolveAutoTrackingResultStatus(result, successPrefix) {
+  if (result?.error) {
+    return {
+      level: "err",
+      text: `${successPrefix}失败: ${result.error}`
+    };
+  }
+
+  if (result?.skipped) {
+    return {
+      level: "err",
+      text: result.reason || "任务正在执行中，请稍后再试"
+    };
+  }
+
+  const importedSnapshots = Number(result?.importedSnapshots) || 0;
+  const importedTrades = Number(result?.importedTrades) || 0;
+  return {
+    level: "ok",
+    text: `${successPrefix}完成：快照 ${importedSnapshots} 条，交易 ${importedTrades} 条`
+  };
+}
+
 function renderForm() {
   const config = state.autoTracking?.config;
   if (!config || !els.autoConfigForm) {
@@ -510,8 +656,18 @@ function renderForm() {
 
 function renderSnapshot() {
   const snapshot = getViewingSnapshot();
-  if (!snapshot || !Array.isArray(snapshot.rows) || snapshot.rows.length === 0) {
-    els.masterRowsBody.innerHTML = `<tr><td colspan="8" class="empty">暂无自动抓取到的持仓表。</td></tr>`;
+  if (!snapshot || !Array.isArray(snapshot.rows)) {
+    const loadingSelectedSnapshot =
+      Boolean(state.selectedSnapshotId) && state.snapshotDetailLoadingId === state.selectedSnapshotId;
+    els.masterRowsBody.innerHTML = `<tr><td colspan="9" class="empty">${
+      loadingSelectedSnapshot ? "正在加载所选月份持仓..." : "暂无自动抓取到的持仓表。"
+    }</td></tr>`;
+    els.latestSnapshotMeta.textContent = loadingSelectedSnapshot ? "正在加载历史月份详情" : "暂无抓取结果";
+    return;
+  }
+
+  if (snapshot.rows.length === 0) {
+    els.masterRowsBody.innerHTML = `<tr><td colspan="9" class="empty">暂无自动抓取到的持仓表。</td></tr>`;
     els.latestSnapshotMeta.textContent = "暂无抓取结果";
     return;
   }
@@ -520,9 +676,32 @@ function renderSnapshot() {
   const monthLabel = monthLabelFromTitleOrDate(snapshot.title, snapshot.postedAt);
   const viewLabel = state.selectedSnapshotId ? "历史查看中" : "最新";
   const anomalyCount = getSnapshotAnomalyCount(snapshot.postId);
+  const sourceStats = snapshot.rows.reduce(
+    (acc, item) => {
+      const source = String(item?.nameSource || "").trim().toLowerCase();
+      if (source === "xueqiu") {
+        acc.xueqiu += 1;
+      } else if (source === "tencent") {
+        acc.tencent += 1;
+      } else {
+        acc.local += 1;
+      }
+      return acc;
+    },
+    { xueqiu: 0, tencent: 0, local: 0 }
+  );
+  const sourceSummary = [
+    sourceStats.xueqiu > 0 ? `雪球名 ${sourceStats.xueqiu}` : "",
+    sourceStats.tencent > 0 ? `腾讯备份 ${sourceStats.tencent}` : "",
+    sourceStats.local > 0 ? `本地纠错 ${sourceStats.local}` : ""
+  ]
+    .filter(Boolean)
+    .join(" / ");
   els.latestSnapshotMeta.textContent = `${viewLabel} | ${monthLabel} | ${sourceLabel} | ${formatDateTime(
     snapshot.postedAt
-  )} | ${snapshot.rows.length} 行${anomalyCount > 0 ? ` | 复核 ${anomalyCount} 行` : ""}`;
+  )} | ${snapshot.rows.length} 行${anomalyCount > 0 ? ` | 复核 ${anomalyCount} 行` : ""}${
+    sourceSummary ? ` | ${sourceSummary}` : ""
+  }`;
 
   const rows = snapshot.rows
     .map((item) => {
@@ -546,17 +725,22 @@ function renderSnapshot() {
             diagnostics.level === "warn" ? "复核" : "已修正"
           }</span>`
         : "";
+      const nameSourceLabel = escapeHtml(formatNameSourceLabel(item.nameSource));
+      const nameSourceClass = formatNameSourceTagClass(item.nameSource);
+      const symbol = escapeHtml(item.symbol || "-");
+      const name = escapeHtml(item.name || "-");
 
       return `
         <tr class="${diagnostics ? "row-anomaly" : ""}">
-          <td class="mono">${item.symbol || "-"}</td>
-          <td>${item.name || "-"} ${nameBadge}</td>
-          <td class="mono">${qtyText}</td>
-          <td class="mono">¥ ${formatNumber(costRaw, 3)}</td>
-          <td class="mono">${latestPriceRaw === null ? "-" : `¥ ${formatNumber(latestPriceRaw, 3)}`}</td>
-          <td class="mono">${marketValueRaw === null ? "-" : `¥ ${formatNumber(marketValueRaw, 3)}`}</td>
-          <td class="mono ${pnlClass}">${floatingPnlRaw === null ? "-" : `¥ ${formatNumber(floatingPnlRaw, 3)}`}</td>
-          <td class="mono ${pctClass}">${pnlPctRaw === null ? "-" : formatNumber(pnlPctRaw, 3)}</td>
+          <td class="mono">${symbol}</td>
+          <td>${name} ${nameBadge}</td>
+          <td><span class="tag ${nameSourceClass}">${nameSourceLabel}</span></td>
+          <td class="mono">${escapeHtml(qtyText)}</td>
+          <td class="mono">¥ ${escapeHtml(formatNumber(costRaw, 3))}</td>
+          <td class="mono">${latestPriceRaw === null ? "-" : `¥ ${escapeHtml(formatNumber(latestPriceRaw, 3))}`}</td>
+          <td class="mono">${marketValueRaw === null ? "-" : `¥ ${escapeHtml(formatNumber(marketValueRaw, 3))}`}</td>
+          <td class="mono ${pnlClass}">${floatingPnlRaw === null ? "-" : `¥ ${escapeHtml(formatNumber(floatingPnlRaw, 3))}`}</td>
+          <td class="mono ${pctClass}">${pnlPctRaw === null ? "-" : escapeHtml(formatNumber(pnlPctRaw, 3))}</td>
         </tr>
       `;
     })
@@ -580,8 +764,8 @@ function renderLogs() {
       return `
         <tr>
           <td>${formatDateTime(log.createdAt)}</td>
-          <td class="mono ${levelClass}">${level}</td>
-          <td>${log.message || "-"}</td>
+          <td class="mono ${levelClass}">${escapeHtml(level)}</td>
+          <td>${escapeHtml(log.message || "-")}</td>
         </tr>
       `;
     })
@@ -607,7 +791,7 @@ function renderCatalog() {
   }
 
   const importedPostIds = new Set(
-    (state.snapshots || []).map((item) => normalizePostId(item.postId)).filter(Boolean)
+    getSnapshotHistoryList().map((item) => normalizePostId(item.postId)).filter(Boolean)
   );
   const rows = state.catalogPosts
     .map((item) => {
@@ -617,17 +801,18 @@ function renderCatalog() {
       const statusText = !hasPostId ? "缺少帖子ID" : imported ? "已导入" : item.processed ? "已处理" : "未导入";
       const statusClass = imported ? "pos" : !hasPostId ? "neg" : "";
       const monthLabel = monthLabelFromTitleOrDate(item.title, item.postedAt);
-      const safeTitle = item.title || "(无标题)";
-      const checkboxAttrs = hasPostId ? `data-catalog-id="${postId}"` : "disabled";
+      const safeTitle = escapeHtml(item.title || "(无标题)");
+      const checkboxAttrs = hasPostId ? `data-catalog-id="${escapeHtml(postId)}"` : "disabled";
+      const safeLink = buildExternalLinkHtml(item.link);
 
       return `
         <tr>
           <td><input type="checkbox" ${checkboxAttrs} /></td>
-          <td class="mono">${monthLabel}</td>
+          <td class="mono">${escapeHtml(monthLabel)}</td>
           <td>${safeTitle}</td>
           <td>${formatDateTime(item.postedAt)}</td>
-          <td class="${statusClass}">${statusText}</td>
-          <td>${item.link ? `<a href="${item.link}" target="_blank" rel="noreferrer">打开</a>` : "-"}</td>
+          <td class="${statusClass}">${escapeHtml(statusText)}</td>
+          <td>${safeLink}</td>
         </tr>
       `;
     })
@@ -643,7 +828,7 @@ function renderSnapshotHistory() {
     return;
   }
 
-  const list = Array.isArray(state.snapshots) ? state.snapshots : [];
+  const list = getSnapshotHistoryList();
   if (list.length === 0) {
     els.snapshotHistoryMeta.textContent = "暂无";
     els.snapshotHistoryBody.innerHTML = `<tr><td colspan="5" class="empty">暂无历史快照。</td></tr>`;
@@ -655,13 +840,15 @@ function renderSnapshotHistory() {
       const active = state.selectedSnapshotId === item.id;
       const monthLabel = monthLabelFromTitleOrDate(item.title, item.postedAt);
       const anomalyCount = getSnapshotAnomalyCount(item.postId);
+      const safeTitle = escapeHtml(item.title || "-");
+      const safeId = escapeHtml(item.id);
       return `
         <tr class="${active ? "row-selected" : ""}">
-          <td class="mono">${monthLabel}</td>
-          <td>${item.title || "-"}${anomalyCount > 0 ? ` <span class="tag tag-warn">复核 ${anomalyCount}</span>` : ""}</td>
+          <td class="mono">${escapeHtml(monthLabel)}</td>
+          <td>${safeTitle}${anomalyCount > 0 ? ` <span class="tag tag-warn">复核 ${escapeHtml(anomalyCount)}</span>` : ""}</td>
           <td>${formatDateTime(item.postedAt)}</td>
-          <td class="mono">${Array.isArray(item.rows) ? item.rows.length : 0}</td>
-          <td><button class="inline-btn" data-view-snapshot="${item.id}">查看</button></td>
+          <td class="mono">${escapeHtml(getSnapshotRowCount(item))}</td>
+          <td><button class="inline-btn" data-view-snapshot="${safeId}">查看</button></td>
         </tr>
       `;
     })
@@ -679,6 +866,12 @@ function renderAnomalies() {
 
   const report = state.anomalyReport;
   const snapshots = Array.isArray(report?.snapshots) ? report.snapshots : [];
+  if (state.anomalyLoading && snapshots.length === 0) {
+    els.anomalyMeta.textContent = "正在加载异常清单...";
+    els.anomalyRowsBody.innerHTML = `<tr><td colspan="5" class="empty">正在计算异常行，请稍候。</td></tr>`;
+    return;
+  }
+
   if (snapshots.length === 0) {
     els.anomalyMeta.textContent = "未发现需要复核或自动修正的快照行";
     els.anomalyRowsBody.innerHTML = `<tr><td colspan="5" class="empty">当前没有需要展示的异常行。</td></tr>`;
@@ -874,31 +1067,103 @@ function renderAll() {
   renderMonthlyMetrics();
 }
 
+async function ensureSnapshotDetail(snapshotId, loadVersion = state.loadVersion) {
+  const targetId = String(snapshotId || "").trim();
+  if (!targetId) {
+    return;
+  }
+
+  if (state.snapshotCache.has(targetId)) {
+    return;
+  }
+
+  if (!getSnapshotHistoryList().some((item) => String(item?.id || "").trim() === targetId)) {
+    return;
+  }
+
+  state.snapshotDetailLoadingId = targetId;
+  if (state.selectedSnapshotId === targetId) {
+    renderSnapshot();
+  }
+
+  try {
+    const data = await request(`/api/master-snapshots/${encodeURIComponent(targetId)}`);
+    if (loadVersion !== state.loadVersion) {
+      return;
+    }
+
+    if (data?.snapshot?.id) {
+      state.snapshotCache.set(String(data.snapshot.id), data.snapshot);
+    }
+  } finally {
+    if (loadVersion === state.loadVersion && state.snapshotDetailLoadingId === targetId) {
+      state.snapshotDetailLoadingId = null;
+    }
+    if (state.selectedSnapshotId === targetId) {
+      renderSnapshot();
+    }
+  }
+}
+
+async function loadAnomalyReport(loadVersion = state.loadVersion) {
+  state.anomalyLoading = true;
+  renderAnomalies();
+
+  try {
+    const report = await request("/api/auto-tracking/anomalies");
+    if (loadVersion !== state.loadVersion) {
+      return;
+    }
+
+    state.anomalyReport = report || { summary: {}, snapshots: [] };
+    rebuildAnomalyIndex();
+  } catch (_error) {
+    if (loadVersion !== state.loadVersion) {
+      return;
+    }
+    state.anomalyReport = state.anomalyReport || { summary: {}, snapshots: [] };
+  } finally {
+    if (loadVersion === state.loadVersion) {
+      state.anomalyLoading = false;
+      renderSnapshot();
+      renderSnapshotHistory();
+      renderAnomalies();
+    }
+  }
+}
+
 async function loadData() {
+  const nextLoadVersion = state.loadVersion + 1;
+  state.loadVersion = nextLoadVersion;
   const bootstrap = await request("/api/auto-tracking/bootstrap?limit=240");
 
   state.autoTracking = bootstrap.autoTracking || null;
   state.latestSnapshot = bootstrap.latestSnapshot || null;
-  state.snapshots = Array.isArray(bootstrap.snapshots) ? bootstrap.snapshots : [];
+  state.snapshots = Array.isArray(bootstrap.snapshotHistory)
+    ? bootstrap.snapshotHistory
+    : Array.isArray(bootstrap.snapshots)
+      ? bootstrap.snapshots
+      : [];
+  syncSnapshotCache();
   state.monthlyUpdates = Array.isArray(bootstrap.monthlyUpdates?.updates) ? bootstrap.monthlyUpdates.updates : [];
   reconcileMonthlyMetricUiState();
   state.anomalyReport = bootstrap.anomalyReport || { summary: {}, snapshots: [] };
-  state.anomalyRowsByKey = new Map();
+  rebuildAnomalyIndex();
+  state.anomalyLoading = !bootstrap.anomalyReport;
 
-  for (const snapshot of state.anomalyReport.snapshots || []) {
-    for (const row of snapshot.rows || []) {
-      if (!row.diagnostics) {
-        continue;
-      }
-      state.anomalyRowsByKey.set(buildAnomalyKey(snapshot.postId, row.symbol), row.diagnostics);
-    }
-  }
-
-  if (state.selectedSnapshotId && !state.snapshots.some((item) => item.id === state.selectedSnapshotId)) {
+  if (state.selectedSnapshotId && !getSnapshotHistoryList().some((item) => item.id === state.selectedSnapshotId)) {
     state.selectedSnapshotId = null;
   }
 
   renderAll();
+
+  if (state.selectedSnapshotId) {
+    void ensureSnapshotDetail(state.selectedSnapshotId, nextLoadVersion);
+  }
+
+  if (!bootstrap.anomalyReport) {
+    void loadAnomalyReport(nextLoadVersion);
+  }
 }
 
 async function fetchCatalog({ silent = false } = {}) {
@@ -940,17 +1205,12 @@ async function handleSaveConfig(event) {
   const weiboCookie = String(payload.weiboCookie || "").trim();
   const qwenApiKey = String(payload.qwenApiKey || "").trim();
 
-  if (!xueqiuCookie) {
-    delete payload.xueqiuCookie;
-  }
-  if (!weiboCookie) {
-    delete payload.weiboCookie;
-  }
-  if (!qwenApiKey) {
-    delete payload.qwenApiKey;
-  }
+  payload.xueqiuCookie = xueqiuCookie;
+  payload.weiboCookie = weiboCookie;
+  payload.qwenApiKey = qwenApiKey;
 
   try {
+    setActionBusy(true);
     setStatus("正在保存配置...", "info");
     await request("/api/auto-tracking/config", {
       method: "POST",
@@ -960,29 +1220,26 @@ async function handleSaveConfig(event) {
     setStatus("配置保存成功", "ok");
   } catch (error) {
     setStatus(`保存失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
   }
 }
 
 async function handleRunNow() {
   try {
+    setActionBusy(true);
     setStatus("正在抓取...", "info");
     const res = await request("/api/auto-tracking/run", {
       method: "POST"
     });
 
     await loadData();
-    const importedSnapshots = Number(res?.result?.importedSnapshots) || 0;
-    const importedTrades = Number(res?.result?.importedTrades) || 0;
-    const runError = res?.result?.error;
-
-    if (runError) {
-      setStatus(`抓取失败: ${runError}`, "err");
-      return;
-    }
-
-    setStatus(`抓取完成：快照 ${importedSnapshots} 条，交易 ${importedTrades} 条`, "ok");
+    const status = resolveAutoTrackingResultStatus(res?.result, "抓取");
+    setStatus(status.text, status.level);
   } catch (error) {
     setStatus(`抓取失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
   }
 }
 
@@ -991,6 +1248,7 @@ async function handleRunBackfill() {
     const pagesValue = Number(els.autoConfigForm?.elements?.backfillMaxPages?.value);
     const pageSizeValue = Number(els.autoConfigForm?.elements?.backfillPageSize?.value);
 
+    setActionBusy(true);
     setStatus("正在回溯历史标题帖子并识别截图...", "info");
     const res = await request("/api/auto-tracking/backfill", {
       method: "POST",
@@ -1001,28 +1259,25 @@ async function handleRunBackfill() {
     });
 
     await loadData();
-    const importedSnapshots = Number(res?.result?.importedSnapshots) || 0;
-    const importedTrades = Number(res?.result?.importedTrades) || 0;
-    const runError = res?.result?.error;
-
-    if (runError) {
-      setStatus(`回溯失败: ${runError}`, "err");
-      return;
-    }
-
-    setStatus(`回溯完成：快照 ${importedSnapshots} 条，交易 ${importedTrades} 条`, "ok");
+    const status = resolveAutoTrackingResultStatus(res?.result, "回溯");
+    setStatus(status.text, status.level);
   } catch (error) {
     setStatus(`回溯失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
   }
 }
 
 async function handleLoadCatalog() {
   try {
+    setActionBusy(true);
     setStatus("正在抓取全部月份目录...", "info");
     await fetchCatalog({ silent: true });
     setStatus(`目录抓取完成：${state.catalogPosts.length} 条月份帖子`, "ok");
   } catch (error) {
     setStatus(`目录抓取失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
   }
 }
 
@@ -1041,6 +1296,7 @@ async function handleImportSelected() {
     const pagesValue = Number(els.autoConfigForm?.elements?.backfillMaxPages?.value);
     const pageSizeValue = Number(els.autoConfigForm?.elements?.backfillPageSize?.value);
 
+    setActionBusy(true);
     setStatus(`正在导入选中月份（${postIds.length} 条）...`, "info");
     const res = await request("/api/auto-tracking/import-selected", {
       method: "POST",
@@ -1056,23 +1312,18 @@ async function handleImportSelected() {
       await fetchCatalog({ silent: true });
     }
 
-    const importedSnapshots = Number(res?.result?.importedSnapshots) || 0;
-    const importedTrades = Number(res?.result?.importedTrades) || 0;
-    const runError = res?.result?.error;
-
-    if (runError) {
-      setStatus(`导入失败: ${runError}`, "err");
-      return;
-    }
-
-    setStatus(`导入完成：快照 ${importedSnapshots} 条，交易 ${importedTrades} 条`, "ok");
+    const status = resolveAutoTrackingResultStatus(res?.result, "导入");
+    setStatus(status.text, status.level);
   } catch (error) {
     setStatus(`导入失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
   }
 }
 
 async function handleRecalculateSnapshots() {
   try {
+    setActionBusy(true);
     setStatus("正在重算历史快照字段并生成异常清单...", "info");
     const res = await request("/api/auto-tracking/recalculate-snapshots", {
       method: "POST"
@@ -1087,6 +1338,8 @@ async function handleRecalculateSnapshots() {
     );
   } catch (error) {
     setStatus(`重算失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
   }
 }
 
@@ -1140,6 +1393,7 @@ function handleSnapshotTableClick(event) {
   state.selectedSnapshotId = id;
   renderSnapshot();
   renderSnapshotHistory();
+  void ensureSnapshotDetail(id);
 }
 
 function handleViewLatestSnapshot() {

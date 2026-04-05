@@ -41,20 +41,26 @@ function buildPortfolio(trades, quotes) {
     }
 
     if (!symbolStates.has(apiSymbol)) {
-      symbolStates.set(apiSymbol, {
-        apiSymbol,
-        rawSymbol: trade.symbol,
-        market: trade.market,
-        name: normalizeSecurityName(trade.apiSymbol || trade.symbol, trade.name, trade.market),
-        quantity: 0,
-        avgCost: 0,
-        realizedPnl: 0
-      });
+        symbolStates.set(apiSymbol, {
+          apiSymbol,
+          rawSymbol: trade.symbol,
+          market: trade.market,
+          nameSource: String(trade.nameSource || "").trim().toLowerCase(),
+          name: normalizeSecurityName(trade.apiSymbol || trade.symbol, trade.name, trade.market, {
+            nameSource: trade.nameSource
+          }),
+          quantity: 0,
+          avgCost: 0,
+          realizedPnl: 0
+        });
     }
 
     const state = symbolStates.get(apiSymbol);
-    state.name = normalizeSecurityName(trade.apiSymbol || trade.symbol, trade.name || state.name, trade.market || state.market);
+    state.name = normalizeSecurityName(trade.apiSymbol || trade.symbol, trade.name || state.name, trade.market || state.market, {
+      nameSource: trade.nameSource
+    });
     state.market = trade.market || state.market;
+    state.nameSource = String(trade.nameSource || state.nameSource || "").trim().toLowerCase();
 
     const qty = Math.max(0, toNumber(trade.quantity));
     const price = toNumber(trade.price);
@@ -121,7 +127,10 @@ function buildPortfolio(trades, quotes) {
     positions.push({
       apiSymbol: state.apiSymbol,
       symbol: state.rawSymbol,
-      name: normalizeSecurityName(state.apiSymbol || state.rawSymbol, state.name || state.apiSymbol, state.market) || state.apiSymbol,
+      name:
+        normalizeSecurityName(state.apiSymbol || state.rawSymbol, state.name || state.apiSymbol, state.market, {
+          nameSource: state.nameSource
+        }) || state.apiSymbol,
       market: state.market,
       quantity: state.quantity,
       avgCost: state.avgCost,

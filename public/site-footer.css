@@ -29,6 +29,11 @@
   white-space: nowrap;
 }
 
+.site-footer-version {
+  font-family: "SFMono-Regular", "JetBrains Mono", "Fira Code", "Menlo", monospace;
+  letter-spacing: 0.01em;
+}
+
 .site-footer-link {
   display: inline-flex;
   align-items: center;

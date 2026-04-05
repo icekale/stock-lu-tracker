@@ -35,10 +35,10 @@ async function bootstrapSiteFooter() {
       String(meta.repositoryLabel || fallbackMeta.repositoryLabel).trim() || fallbackMeta.repositoryLabel;
 
     if (authorEl) {
-      authorEl.textContent = `作者：${author}`;
+      authorEl.textContent = author;
     }
     if (versionEl) {
-      versionEl.textContent = `版本：${versionLabel}`;
+      versionEl.textContent = versionLabel;
     }
     if (githubEl) {
       githubEl.href = repositoryUrl;
@@ -50,10 +50,10 @@ async function bootstrapSiteFooter() {
     }
   } catch (_error) {
     if (authorEl) {
-      authorEl.textContent = `作者：${fallbackMeta.author}`;
+      authorEl.textContent = fallbackMeta.author;
     }
     if (versionEl) {
-      versionEl.textContent = `版本：${fallbackMeta.versionLabel}`;
+      versionEl.textContent = fallbackMeta.versionLabel;
     }
     if (githubEl) {
       githubEl.href = fallbackMeta.repositoryUrl;

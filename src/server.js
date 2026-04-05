@@ -7,7 +7,7 @@ const appPackage = require("../package.json");
 const { ensureStore, readStore, mutateStore } = require("./store");
 const { buildPortfolio, buildMonthlyStatus, toMonthKey } = require("./portfolio");
 const { extractSnapshotPostMetrics } = require("./post-metrics");
-const { refreshQuotes } = require("./quotes");
+const { refreshQuotes, lookupSecurityNames } = require("./quotes");
 const { toApiSymbol, normalizeMarket, normalizeSecurityName } = require("./symbols");
 const {
   ensureAutoTrackingState,
@@ -366,7 +366,10 @@ function parseTradeInput(payload) {
     symbol,
     apiSymbol,
     market,
-    name: normalizeSecurityName(symbol, payload.name, market),
+    name: normalizeSecurityName(symbol, payload.name, market, {
+      nameSource: payload.nameSource
+    }),
+    nameSource: String(payload.nameSource || "").trim().toLowerCase(),
     type,
     quantity,
     price,
@@ -419,6 +422,52 @@ function normalizeSourceSymbol(rawSymbol) {
   }
 
   return null;
+}
+
+function collectSnapshotApiSymbols(snapshots) {
+  const apiSymbols = new Set();
+
+  for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+    for (const row of Array.isArray(snapshot?.rows) ? snapshot.rows : []) {
+      const normalized = normalizeSourceSymbol(row?.symbol);
+      if (!normalized) {
+        continue;
+      }
+      const apiSymbol = toApiSymbol(normalized.symbol, normalized.market);
+      if (apiSymbol) {
+        apiSymbols.add(apiSymbol);
+      }
+    }
+  }
+
+  return [...apiSymbols];
+}
+
+function applyCollectedSecurityNameValidation(snapshots, namesBySymbol, sourcesBySymbol = {}) {
+  if (!namesBySymbol || typeof namesBySymbol !== "object") {
+    return;
+  }
+
+  for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
+    for (const row of Array.isArray(snapshot?.rows) ? snapshot.rows : []) {
+      const normalized = normalizeSourceSymbol(row?.symbol);
+      if (!normalized) {
+        continue;
+      }
+
+      const apiSymbol = toApiSymbol(normalized.symbol, normalized.market);
+      const validatedName = String(namesBySymbol[apiSymbol] || "").trim();
+      const nameSource = String(sourcesBySymbol[apiSymbol] || "").trim().toLowerCase();
+      if (!validatedName) {
+        continue;
+      }
+
+      row.name = normalizeSecurityName(normalized.symbol, validatedName, normalized.market, {
+        nameSource
+      });
+      row.nameSource = nameSource;
+    }
+  }
 }
 
 function toFiniteNumber(value) {
@@ -571,7 +620,9 @@ function sanitizeMasterSnapshotRow(row) {
   const action = String(row.action || "HOLD").toUpperCase();
   const output = {
     ...row,
-    name: normalizeSecurityName(row.symbol, row.name),
+    name: normalizeSecurityName(row.symbol, row.name, undefined, {
+      nameSource: row.nameSource
+    }),
     marketName: normalizeSnapshotMarketNameLabel(row.symbol, row.marketName)
   };
 
@@ -715,6 +766,15 @@ function buildSnapshotRowIssues(row) {
   }
   if (!marketName) {
     issues.push("市场字段缺失");
+  }
+  if (referenceCost !== null && referenceCost <= 0) {
+    issues.push("成本价异常");
+  }
+  if (referenceHoldingCost !== null && referenceHoldingCost <= 0) {
+    issues.push("持仓成本异常");
+  }
+  if (holdingQty > 0 && latestPrice !== null && referenceCost !== null && referenceCost > latestPrice * 20) {
+    issues.push("成本价疑似识别异常");
   }
 
   if (holdingQty > 0 && latestPrice !== null && marketValue !== null) {
@@ -1097,6 +1157,56 @@ function appendAutoTrackingLogs(autoTracking, logs) {
   autoTracking.logs = [...logs, ...(autoTracking.logs || [])].slice(0, 200);
 }
 
+function buildNameValidationSourceStats(namesBySymbol, sourcesBySymbol) {
+  const stats = {
+    total: 0,
+    xueqiu: 0,
+    tencent: 0,
+    other: 0
+  };
+
+  for (const apiSymbol of Object.keys(namesBySymbol || {})) {
+    const name = String(namesBySymbol?.[apiSymbol] || "").trim();
+    if (!name) {
+      continue;
+    }
+
+    stats.total += 1;
+    const source = String(sourcesBySymbol?.[apiSymbol] || "").trim().toLowerCase();
+    if (source === "xueqiu") {
+      stats.xueqiu += 1;
+    } else if (source === "tencent") {
+      stats.tencent += 1;
+    } else {
+      stats.other += 1;
+    }
+  }
+
+  return stats;
+}
+
+function buildNameValidationLog(stats, label = "名称校验") {
+  if (!stats || stats.total <= 0) {
+    return null;
+  }
+
+  const parts = [`雪球 ${stats.xueqiu}`];
+  if (stats.tencent > 0) {
+    parts.push(`腾讯备份 ${stats.tencent}`);
+  }
+  if (stats.other > 0) {
+    parts.push(`其他 ${stats.other}`);
+  }
+
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    level: "info",
+    message: `${label}完成：共 ${stats.total} 只，${parts.join("，")}`,
+    meta: stats
+  };
+}
+
 function buildPositionQuantityIndex(trades, quotes) {
   const quantityBySymbol = new Map();
   const { positions } = buildPortfolio(trades, quotes);
@@ -1115,6 +1225,35 @@ function buildPositionQuantityIndex(trades, quotes) {
 
 function getTrackedQuantity(quantityBySymbol, apiSymbol) {
   return Number(quantityBySymbol.get(apiSymbol)) || 0;
+}
+
+function isAutoImportedTradeForPost(trade, postId) {
+  const normalizedPostId = normalizePostId(postId);
+  if (!normalizedPostId) {
+    return false;
+  }
+
+  const note = String(trade?.note || "").trim();
+  return note.startsWith("auto_sync:") && note.includes(`:${normalizedPostId}:`);
+}
+
+function purgeAutoImportedSnapshotData(store, importedTradeKeys, postId) {
+  const normalizedPostId = normalizePostId(postId);
+  if (!normalizedPostId) {
+    return 0;
+  }
+
+  const currentTrades = Array.isArray(store?.trades) ? store.trades : [];
+  const nextTrades = currentTrades.filter((trade) => !isAutoImportedTradeForPost(trade, normalizedPostId));
+  store.trades = nextTrades;
+
+  for (const key of Array.from(importedTradeKeys)) {
+    if (String(key || "").startsWith(`${normalizedPostId}|`)) {
+      importedTradeKeys.delete(key);
+    }
+  }
+
+  return currentTrades.length - nextTrades.length;
 }
 
 function applyTrackedTrade(quantityBySymbol, trade) {
@@ -1210,6 +1349,25 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
       collectOptions
     );
 
+    try {
+      const apiSymbols = collectSnapshotApiSymbols(syncResult.snapshots);
+      const securityNames = await lookupSecurityNames(apiSymbols, {
+        xueqiuCookie: config.xueqiuCookie
+      });
+      const nameStats = buildNameValidationSourceStats(securityNames.namesBySymbol, securityNames.sourcesBySymbol);
+      applyCollectedSecurityNameValidation(
+        syncResult.snapshots,
+        securityNames.namesBySymbol,
+        securityNames.sourcesBySymbol
+      );
+      const nameLog = buildNameValidationLog(nameStats, "名称校验");
+      if (nameLog) {
+        syncResult.logs = [nameLog, ...(syncResult.logs || [])];
+      }
+    } catch (_error) {
+      // Best-effort name validation should not block snapshot import.
+    }
+
     let importedSnapshots = 0;
     let importedTrades = 0;
     let skippedSnapshots = 0;
@@ -1218,7 +1376,7 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
       const autoTracking = ensureAutoTrackingState(draft);
       const processedPostIds = new Set(autoTracking.processedPostIds || []);
       const importedTradeKeys = new Set(autoTracking.importedTradeKeys || []);
-      const quantityBySymbol = buildPositionQuantityIndex(draft.trades, draft.quotes);
+      let quantityBySymbol = buildPositionQuantityIndex(draft.trades, draft.quotes);
 
       appendAutoTrackingLogs(autoTracking, syncResult.logs);
 
@@ -1241,6 +1399,13 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
         const snapshotMetrics = extractSnapshotPostMetrics(
           buildMetricsSourceSnapshot(sanitizedSnapshot, preservedManualMetrics)
         );
+
+        if (shouldRefreshSnapshot) {
+          const removedTradeCount = purgeAutoImportedSnapshotData(draft, importedTradeKeys, sanitizedSnapshot.postId);
+          if (removedTradeCount > 0) {
+            quantityBySymbol = buildPositionQuantityIndex(draft.trades, draft.quotes);
+          }
+        }
 
         let importedTradesInSnapshot = 0;
 
@@ -1289,6 +1454,7 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
             fee: 0,
             tradeDate: sanitizedSnapshot.postedAt,
             name: row.name || "",
+            nameSource: row.nameSource || "",
             note: `auto_sync:${sanitizedSnapshot.source}:${sanitizedSnapshot.postId}:${row.actionLabel || row.action}`
           });
 
@@ -1426,6 +1592,10 @@ function normalizePostIds(input) {
   return [...new Set(ids)];
 }
 
+function hasOwnPropertyValue(object, key) {
+  return Boolean(object) && Object.prototype.hasOwnProperty.call(object, key);
+}
+
 function buildMonthlyUpdatesPayload(store) {
   return {
     updates: sortByRecentDate(store.monthlyUpdates || [], "postedAt"),
@@ -1434,22 +1604,40 @@ function buildMonthlyUpdatesPayload(store) {
   };
 }
 
+function buildMasterSnapshotSummary(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+
+  return {
+    id: snapshot.id || null,
+    postId: snapshot.postId || null,
+    source: snapshot.source || "",
+    postedAt: snapshot.postedAt || null,
+    link: snapshot.link || "",
+    title: snapshot.title || "",
+    rowCount: Array.isArray(snapshot.rows) ? snapshot.rows.length : 0,
+    importedTrades: Number(snapshot.importedTrades) || 0,
+    createdAt: snapshot.createdAt || null,
+    updatedAt: snapshot.updatedAt || null
+  };
+}
+
 function buildAutoTrackingBootstrapPayload(store, options = {}) {
   const autoTracking = ensureAutoTrackingState(store);
   const limit = Math.max(1, Math.min(240, Number(options.limit) || 240));
   const snapshotSource = (store.masterSnapshots || []).slice(0, limit);
-  const snapshotsWithDiagnostics = sanitizeSnapshotCollection(snapshotSource, { includeDiagnostics: true });
-  const snapshots = snapshotsWithDiagnostics.map((snapshot) => stripSnapshotDiagnostics(snapshot));
-  const latestSnapshot = snapshots[0] || sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || null);
+  const latestSnapshotSource = snapshotSource[0] || autoTracking.latestSnapshot || null;
+  const latestSnapshot = sanitizeMasterSnapshotRecord(latestSnapshotSource);
+  const snapshotHistory = snapshotSource.map((snapshot) => buildMasterSnapshotSummary(snapshot)).filter(Boolean);
 
   return {
     autoTracking: getAutoTrackingPublic(autoTracking, {
       includeLatestSnapshot: false
     }),
     latestSnapshot,
-    snapshots,
-    monthlyUpdates: buildMonthlyUpdatesPayload(store),
-    anomalyReport: buildAnomalyReportFromSnapshots(snapshotsWithDiagnostics)
+    snapshotHistory,
+    monthlyUpdates: buildMonthlyUpdatesPayload(store)
   };
 }
 
@@ -1929,16 +2117,16 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
         patch.backfillPageSize = Number(payload.backfillPageSize);
       }
 
-      if (typeof payload.xueqiuCookie === "string") {
-        patch.xueqiuCookie = payload.xueqiuCookie.trim();
+      if (hasOwnPropertyValue(payload, "xueqiuCookie")) {
+        patch.xueqiuCookie = String(payload.xueqiuCookie || "").trim();
       }
 
-      if (typeof payload.weiboCookie === "string") {
-        patch.weiboCookie = payload.weiboCookie.trim();
+      if (hasOwnPropertyValue(payload, "weiboCookie")) {
+        patch.weiboCookie = String(payload.weiboCookie || "").trim();
       }
 
-      if (typeof payload.qwenApiKey === "string") {
-        patch.qwenApiKey = payload.qwenApiKey.trim();
+      if (hasOwnPropertyValue(payload, "qwenApiKey")) {
+        patch.qwenApiKey = String(payload.qwenApiKey || "").trim();
       }
 
       autoTracking.config = mergeAutoTrackingConfig(patch);
@@ -2107,9 +2295,49 @@ app.post("/api/auto-tracking/recalculate-snapshots", async (_req, res, next) => 
       issueRowCount: 0
     };
 
+    const beforeStore = await readStore();
+    const beforeAutoTracking = ensureAutoTrackingState(beforeStore);
+    const apiSymbols = collectSnapshotApiSymbols(beforeStore.masterSnapshots || []);
+    let securityNames = {
+      namesBySymbol: {},
+      sourcesBySymbol: {}
+    };
+
+    try {
+      securityNames = await lookupSecurityNames(apiSymbols, {
+        xueqiuCookie: beforeAutoTracking.config?.xueqiuCookie
+      });
+    } catch (_error) {
+      securityNames = {
+        namesBySymbol: {},
+        sourcesBySymbol: {}
+      };
+    }
+
     await mutateStore((draft) => {
       const autoTracking = ensureAutoTrackingState(draft);
       const nextSnapshots = [];
+      const nameStats = buildNameValidationSourceStats(securityNames.namesBySymbol, securityNames.sourcesBySymbol);
+
+      applyCollectedSecurityNameValidation(
+        draft.masterSnapshots || [],
+        securityNames.namesBySymbol,
+        securityNames.sourcesBySymbol
+      );
+
+      for (const trade of draft.trades || []) {
+        const apiSymbol = String(trade?.apiSymbol || "").trim().toUpperCase();
+        const validatedName = String(securityNames.namesBySymbol?.[apiSymbol] || "").trim();
+        if (!validatedName) {
+          continue;
+        }
+
+        const nameSource = String(securityNames.sourcesBySymbol?.[apiSymbol] || "").trim().toLowerCase();
+        trade.name = normalizeSecurityName(trade.symbol || apiSymbol, validatedName, trade.market, {
+          nameSource
+        });
+        trade.nameSource = nameSource;
+      }
 
       for (const snapshot of draft.masterSnapshots || []) {
         const sanitized = sanitizeMasterSnapshotRecord(snapshot, { includeDiagnostics: true });
@@ -2142,6 +2370,10 @@ app.post("/api/auto-tracking/recalculate-snapshots", async (_req, res, next) => 
 
       draft.masterSnapshots = sortByRecentDate(nextSnapshots, "postedAt").slice(0, 200);
       autoTracking.latestSnapshot = draft.masterSnapshots[0] || null;
+      const nameLog = buildNameValidationLog(nameStats, "历史名称重算");
+      if (nameLog) {
+        appendAutoTrackingLogs(autoTracking, [nameLog]);
+      }
     });
 
     const store = await readStore();
@@ -2165,6 +2397,27 @@ app.get("/api/master-snapshots", async (req, res, next) => {
     const snapshots = sanitizeSnapshotCollection((store.masterSnapshots || []).slice(0, limit));
 
     res.json({ snapshots });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/master-snapshots/:id", async (req, res, next) => {
+  try {
+    const targetId = String(req.params.id || "").trim();
+    if (!targetId) {
+      throw createHttpError(400, "snapshot id 不能为空");
+    }
+
+    const store = await readStore();
+    const snapshot = (store.masterSnapshots || []).find((item) => String(item?.id || "").trim() === targetId);
+    if (!snapshot) {
+      throw createHttpError(404, "未找到对应快照");
+    }
+
+    res.json({
+      snapshot: sanitizeMasterSnapshotRecord(snapshot)
+    });
   } catch (error) {
     next(error);
   }

@@ -6,7 +6,7 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 
 const { createWorker } = require("tesseract.js");
-const { normalizeSecurityName } = require("./symbols");
+const { normalizeSecurityName, SYMBOL_NAME_OVERRIDES } = require("./symbols");
 
 const XUEQIU_UID = "8790885129";
 const WEIBO_UID = "3962719063";
@@ -30,27 +30,7 @@ const ACTION_KEYWORDS = [
 ];
 
 const SYMBOL_PATTERN = "(\\d{6}\\.(?:SH|SZ)|\\d{4,5}\\.HK|\\d{6}|\\d{4,5}|[A-Z]{1,6}(?:\\.[A-Z]{2})?)";
-const SNAPSHOT_NAME_OVERRIDES = Object.freeze({
-  "000776": "广发证券",
-  "000807": "云铝股份",
-  "001286": "陕西能源",
-  "00700": "腾讯控股",
-  "00883": "中国海洋石油",
-  "00902": "华能国际电力股份",
-  "00941": "中国移动",
-  "01030": "新城发展",
-  "01088": "中国神华",
-  "01898": "中煤能源",
-  "03933": "联邦制药",
-  "511880": "银华日利",
-  "600863": "内蒙华电",
-  "600900": "长江电力",
-  "600941": "中国移动",
-  "600985": "淮北矿业",
-  "601088": "中国神华",
-  "601225": "陕西煤业",
-  "601899": "紫金矿业"
-});
+const SNAPSHOT_NAME_OVERRIDES = SYMBOL_NAME_OVERRIDES;
 const SNAPSHOT_SYMBOL_OVERRIDES_BY_NAME = Object.freeze(
   Object.entries(SNAPSHOT_NAME_OVERRIDES).reduce((acc, [symbol, name]) => {
     const key = String(name || "").trim();
