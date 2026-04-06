@@ -9,6 +9,10 @@ const state = {
 const els = {
   tabLatestBtn: document.getElementById("tabLatestBtn"),
   tabAdjustBtn: document.getElementById("tabAdjustBtn"),
+  monthPrevBtn: document.getElementById("monthPrevBtn"),
+  monthNextBtn: document.getElementById("monthNextBtn"),
+  monthYearGroup: document.getElementById("monthYearGroup"),
+  monthSegmentGroup: document.getElementById("monthSegmentGroup"),
   snapshotSelect: document.getElementById("snapshotSelect"),
   adjustView: document.getElementById("adjustView"),
   latestView: document.getElementById("latestView"),
@@ -17,10 +21,17 @@ const els = {
   closeRowsBody: document.getElementById("closeRowsBody"),
   latestRowsBody: document.getElementById("latestRowsBody"),
   totalMarketValue: document.getElementById("totalMarketValue"),
-  marketValueMoM: document.getElementById("marketValueMoM"),
+  monthlyReturnValue: document.getElementById("monthlyReturnValue"),
+  monthlyReturnMeta: document.getElementById("monthlyReturnMeta"),
+  cumulativeNetValue: document.getElementById("cumulativeNetValue"),
   netIndexValue: document.getElementById("netIndexValue"),
   yearStartIndexValue: document.getElementById("yearStartIndexValue"),
-  holdingCount: document.getElementById("holdingCount"),
+  holdingCountMeta: document.getElementById("holdingCountMeta"),
+  outperformValue: document.getElementById("outperformValue"),
+  outperformMeta: document.getElementById("outperformMeta"),
+  latestMonthValue: document.getElementById("latestMonthValue"),
+  latestUpdateMeta: document.getElementById("latestUpdateMeta"),
+  selectedSnapshotMeta: document.getElementById("selectedSnapshotMeta"),
   detailListMeta: document.getElementById("detailListMeta"),
   detailSnapshotList: document.getElementById("detailSnapshotList"),
   monthlyNetworthChart: document.getElementById("monthlyNetworthChart"),
@@ -89,6 +100,15 @@ function formatIndex(value) {
     return "-";
   }
   return number.toFixed(4);
+}
+
+function formatPercent(value, digits = 2) {
+  const number = toNumber(value);
+  if (number === null) {
+    return "-";
+  }
+  const prefix = number > 0 ? "+" : "";
+  return `${prefix}${number.toFixed(digits)}%`;
 }
 
 function formatDateTime(value) {
@@ -250,6 +270,24 @@ function monthLabel(snapshot) {
     return "-";
   }
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getSnapshotMonthMeta(snapshot) {
+  const month = monthLabel(snapshot);
+  if (!month || month === "-" || !month.includes("-")) {
+    return {
+      month: "-",
+      year: "-",
+      monthNumber: "-"
+    };
+  }
+
+  const [year, monthNumber] = month.split("-");
+  return {
+    month,
+    year,
+    monthNumber
+  };
 }
 
 function getRowQty(row) {
@@ -534,6 +572,82 @@ function parseNetIndex(text) {
   return value;
 }
 
+function toSignedPercentByDirection(directionText, valueText) {
+  const value = toNumber(valueText);
+  if (value === null) {
+    return null;
+  }
+
+  const direction = String(directionText || "").trim();
+  if (/下跌|亏损|跑输/.test(direction)) {
+    return -Math.abs(value);
+  }
+  if (/上涨|盈利|跑赢/.test(direction)) {
+    return Math.abs(value);
+  }
+  return value;
+}
+
+function toSignedYuanByDirection(directionText, valueText, unitText) {
+  const amount = toYuanByUnit(valueText, unitText, String(directionText || ""));
+  if (amount === null) {
+    return null;
+  }
+
+  const direction = String(directionText || "").trim();
+  if (/亏损/.test(direction)) {
+    return -Math.abs(amount);
+  }
+  return amount;
+}
+
+function parseMonthlyPerformance(snapshot) {
+  const mergedText = normalizeStatsText(`${String(snapshot?.rawText || "")}\n${String(snapshot?.ocrText || "")}`);
+  if (!mergedText) {
+    return {
+      profitAmount: null,
+      profitPct: null,
+      benchmarkPct: null,
+      outperformPct: null
+    };
+  }
+
+  let profitAmount = null;
+  let profitPct = null;
+  let benchmarkPct = null;
+  let outperformPct = null;
+
+  const profitAmountMatch = mergedText.match(/本月(盈利|亏损)\s*([0-9]+(?:\.[0-9]+)?)\s*([Ww万亿]?)/);
+  if (profitAmountMatch) {
+    profitAmount = toSignedYuanByDirection(profitAmountMatch[1], profitAmountMatch[2], profitAmountMatch[3]);
+    if (profitAmount !== null && !profitAmountMatch[3] && Math.abs(profitAmount) < 100_000) {
+      profitAmount *= 10_000;
+    }
+  }
+
+  const profitPctMatch = mergedText.match(/本月(盈利|亏损)\s*([0-9]+(?:\.[0-9]+)?)%/);
+  if (profitPctMatch) {
+    profitPct = toSignedPercentByDirection(profitPctMatch[1], profitPctMatch[2]);
+  }
+
+  const benchmarkMatch = mergedText.match(/(?:本月)?(?:上证指数|沪指|上证)\s*(上涨|下跌)?\s*([0-9]+(?:\.[0-9]+)?)%/);
+  if (benchmarkMatch) {
+    benchmarkPct = toSignedPercentByDirection(benchmarkMatch[1], benchmarkMatch[2]);
+  }
+
+  const outperformMatch = mergedText.match(/本月跑(赢|输)\s*([0-9]+(?:\.[0-9]+)?)%/);
+  if (outperformMatch) {
+    outperformPct = toSignedPercentByDirection(`跑${outperformMatch[1]}`, outperformMatch[2]);
+  }
+
+  return {
+    profitAmount,
+    profitPct,
+    benchmarkPct,
+    outperformPct
+  };
+}
+
 function parsePostMetrics(snapshot) {
   if (!snapshot) {
     return {
@@ -607,6 +721,76 @@ function buildRenderPayload() {
     currentPostMetrics,
     previousPostMetrics,
     holdingCount: currentRows.length
+  };
+}
+
+function needsRowReview(item) {
+  if (!item) {
+    return false;
+  }
+
+  return item.cost === null || item.marketValue === null || item.qualityScore >= 1.15;
+}
+
+function buildPerformanceSummary(payload) {
+  const currentValue = toNumber(payload.currentMarketValue);
+  const previousValue = toNumber(payload.previousMarketValue);
+  const parsed = parseMonthlyPerformance(payload.current);
+
+  const fallbackProfitAmount =
+    currentValue !== null && previousValue !== null && previousValue > 0 ? currentValue - previousValue : null;
+  const fallbackProfitPct =
+    fallbackProfitAmount !== null && previousValue !== null && previousValue > 0
+      ? (fallbackProfitAmount / previousValue) * 100
+      : null;
+
+  const profitAmount = parsed.profitAmount ?? fallbackProfitAmount;
+  const profitPct = parsed.profitPct ?? fallbackProfitPct;
+  const benchmarkPct = parsed.benchmarkPct;
+  const outperformPct =
+    parsed.outperformPct ?? (profitPct !== null && benchmarkPct !== null ? profitPct - benchmarkPct : null);
+
+  return {
+    profitAmount,
+    profitPct,
+    benchmarkPct,
+    outperformPct
+  };
+}
+
+function buildMonthNavigatorModel() {
+  const groups = new Map();
+
+  for (const snapshot of state.snapshots) {
+    const meta = getSnapshotMonthMeta(snapshot);
+    if (meta.month === "-") {
+      continue;
+    }
+
+    if (!groups.has(meta.year)) {
+      groups.set(meta.year, []);
+    }
+
+    groups.get(meta.year).push({
+      id: snapshot.id,
+      month: meta.month,
+      monthNumber: meta.monthNumber,
+      postedAt: snapshot.postedAt
+    });
+  }
+
+  const selected = currentSnapshot();
+  const selectedMeta = getSnapshotMonthMeta(selected);
+  const years = [...groups.keys()].sort((a, b) => Number(b) - Number(a));
+  const selectedYear = selectedMeta.year !== "-" ? selectedMeta.year : years[0] || "";
+  const selectedIndex = selected ? state.snapshots.findIndex((item) => item.id === selected.id) : -1;
+
+  return {
+    groups,
+    years,
+    selectedYear,
+    selectedSnapshotId: selected?.id || null,
+    selectedIndex
   };
 }
 
@@ -932,22 +1116,72 @@ function renderSnapshotDetailList() {
 }
 
 function renderMonthSelect() {
-  if (!els.snapshotSelect) {
+  const hasNativeSelect = Boolean(els.snapshotSelect);
+  const hasNavigator = Boolean(els.monthYearGroup && els.monthSegmentGroup);
+
+  if (!hasNativeSelect && !hasNavigator) {
     return;
   }
-
-  const options = state.snapshots.map((snapshot) => {
-    const label = monthLabel(snapshot);
-    return `<option value="${escapeHtml(snapshot.id)}">${escapeHtml(label)}</option>`;
-  });
-
-  els.snapshotSelect.innerHTML = options.join("");
 
   if (!state.selectedSnapshotId && state.snapshots[0]?.id) {
     state.selectedSnapshotId = state.snapshots[0].id;
   }
 
-  els.snapshotSelect.value = state.selectedSnapshotId || "";
+  if (hasNativeSelect) {
+    const options = state.snapshots.map((snapshot) => {
+      const label = monthLabel(snapshot);
+      return `<option value="${escapeHtml(snapshot.id)}">${escapeHtml(label)}</option>`;
+    });
+
+    els.snapshotSelect.innerHTML = options.join("");
+    els.snapshotSelect.value = state.selectedSnapshotId || "";
+  }
+
+  if (!hasNavigator) {
+    return;
+  }
+
+  const navigatorModel = buildMonthNavigatorModel();
+  const yearButtons = navigatorModel.years.map((year) => {
+    const isActive = navigatorModel.selectedYear === year;
+    return `
+      <button
+        type="button"
+        class="month-segment-btn ${isActive ? "is-active" : ""}"
+        data-select-year="${escapeHtml(year)}"
+        aria-pressed="${isActive ? "true" : "false"}"
+      >
+        ${escapeHtml(year)}
+      </button>
+    `;
+  });
+
+  const monthButtons = (navigatorModel.groups.get(navigatorModel.selectedYear) || []).map((item) => {
+    const isActive = navigatorModel.selectedSnapshotId === item.id;
+    return `
+      <button
+        type="button"
+        class="month-chip-btn ${isActive ? "is-active" : ""}"
+        data-select-snapshot="${escapeHtml(item.id)}"
+        aria-pressed="${isActive ? "true" : "false"}"
+      >
+        <span>${escapeHtml(item.monthNumber)}</span>
+        <small>月</small>
+      </button>
+    `;
+  });
+
+  els.monthYearGroup.innerHTML = yearButtons.join("");
+  els.monthSegmentGroup.innerHTML = monthButtons.join("");
+
+  if (els.monthPrevBtn) {
+    els.monthPrevBtn.disabled =
+      navigatorModel.selectedIndex < 0 || navigatorModel.selectedIndex >= state.snapshots.length - 1;
+  }
+
+  if (els.monthNextBtn) {
+    els.monthNextBtn.disabled = navigatorModel.selectedIndex <= 0;
+  }
 }
 
 function parseReferenceStockValue(snapshot) {
@@ -1217,14 +1451,15 @@ function renderAdjustTable(rows) {
       const delta = escapeHtml(formatDelta(item.delta));
       const cost = escapeHtml(formatCost(item.cost));
       const holdingAmount = escapeHtml(item.marketValue === null ? "-" : formatCurrency(item.marketValue, 0));
+      const rowClass = needsRowReview(item) ? "row-review" : "";
       return `
-        <tr>
+        <tr class="${rowClass}">
           <td class="mono">${symbol}</td>
           <td><span class="stock-name">${name}</span></td>
           <td><span class="badge ${actionClass}">${actionLabel}</span></td>
-          <td class="mono ${deltaClass(item.delta)}">${delta}</td>
-          <td class="mono cost-cell">${cost}</td>
-          <td class="mono">${holdingAmount}</td>
+          <td class="mono numeric-cell ${deltaClass(item.delta)}">${delta}</td>
+          <td class="mono numeric-cell cost-cell">${cost}</td>
+          <td class="mono numeric-cell">${holdingAmount}</td>
         </tr>
       `;
     });
@@ -1247,7 +1482,7 @@ function renderOpenTable(rows) {
         <tr>
           <td class="mono">${symbol}</td>
           <td><span class="stock-name">${name}</span></td>
-          <td class="mono delta-pos">${qty}</td>
+          <td class="mono numeric-cell delta-pos">${qty}</td>
           <td class="history-icon">◷</td>
         </tr>
       `;
@@ -1271,7 +1506,7 @@ function renderCloseTable(rows) {
         <tr>
           <td class="mono">${symbol}</td>
           <td><span class="stock-name">${name}</span></td>
-          <td class="mono delta-neg">${qty}</td>
+          <td class="mono numeric-cell delta-neg">${qty}</td>
           <td class="history-icon">◷</td>
         </tr>
       `;
@@ -1293,13 +1528,14 @@ function renderLatestTable(rows) {
       const qty = escapeHtml(formatNumber(item.qty, 0));
       const cost = escapeHtml(formatCost(item.cost));
       const marketValue = escapeHtml(item.marketValue === null ? "-" : formatCost(item.marketValue));
+      const rowClass = needsRowReview(item) ? "row-review" : "";
       return `
-        <tr>
+        <tr class="${rowClass}">
           <td class="mono">${symbol}</td>
           <td><span class="stock-name">${name}</span></td>
-          <td class="mono">${qty}</td>
-          <td class="mono cost-cell">${cost}</td>
-          <td class="mono">${marketValue}</td>
+          <td class="mono numeric-cell">${qty}</td>
+          <td class="mono numeric-cell cost-cell">${cost}</td>
+          <td class="mono numeric-cell">${marketValue}</td>
         </tr>
       `;
     });
@@ -1331,8 +1567,49 @@ function renderTabState() {
 }
 
 function renderOverviewStats(payload) {
+  const current = payload.current;
+  const performance = buildPerformanceSummary(payload);
+  const updateText = current
+    ? `${formatDateTime(current.postedAt)} · ${sourceLabel(current.source)}`
+    : "暂无最近更新";
+
   if (els.totalMarketValue) {
     els.totalMarketValue.textContent = formatCurrency(payload.currentMarketValue, 0);
+  }
+
+  if (els.latestMonthValue) {
+    els.latestMonthValue.textContent = current ? monthLabel(current) : "-";
+  }
+
+  if (els.latestUpdateMeta) {
+    els.latestUpdateMeta.textContent = updateText;
+  }
+
+  if (els.monthlyReturnValue) {
+    els.monthlyReturnValue.textContent =
+      performance.profitAmount === null ? "-" : formatCurrency(performance.profitAmount, 0);
+    els.monthlyReturnValue.classList.remove("delta-pos", "delta-neg", "delta-zero");
+    els.monthlyReturnValue.classList.add(
+      performance.profitAmount > 0 ? "delta-pos" : performance.profitAmount < 0 ? "delta-neg" : "delta-zero"
+    );
+  }
+
+  if (els.monthlyReturnMeta) {
+    const parts = [];
+    if (performance.profitPct !== null) {
+      parts.push(`收益率 ${formatPercent(performance.profitPct)}`);
+    }
+    if (performance.benchmarkPct !== null) {
+      parts.push(`上证 ${formatPercent(performance.benchmarkPct)}`);
+    }
+    els.monthlyReturnMeta.textContent = parts.length > 0 ? parts.join(" · ") : "暂无收益文本锚点";
+  }
+
+  if (els.cumulativeNetValue) {
+    els.cumulativeNetValue.textContent = formatCurrency(
+      payload.currentPostMetrics?.cumulativeNetValue ?? payload.currentMarketValue,
+      0
+    );
   }
 
   if (els.netIndexValue) {
@@ -1340,33 +1617,36 @@ function renderOverviewStats(payload) {
   }
 
   if (els.yearStartIndexValue) {
-    els.yearStartIndexValue.textContent = formatIndex(payload.currentPostMetrics?.yearStartNetIndex);
+    const yearStart = formatIndex(payload.currentPostMetrics?.yearStartNetIndex);
+    els.yearStartIndexValue.textContent = yearStart === "-" ? "年初 -" : `年初 ${yearStart}`;
   }
 
-  if (els.holdingCount) {
-    els.holdingCount.textContent = formatNumber(payload.holdingCount, 0);
+  if (els.holdingCountMeta) {
+    els.holdingCountMeta.textContent = `${formatNumber(payload.holdingCount, 0)} 只持仓`;
   }
 
-  if (!els.marketValueMoM) {
-    return;
+  if (els.outperformValue) {
+    els.outperformValue.textContent = formatPercent(performance.outperformPct);
+    els.outperformValue.classList.remove("delta-pos", "delta-neg", "delta-zero");
+    els.outperformValue.classList.add(
+      performance.outperformPct > 0 ? "delta-pos" : performance.outperformPct < 0 ? "delta-neg" : "delta-zero"
+    );
   }
 
-  els.marketValueMoM.classList.remove("delta-pos", "delta-neg", "delta-zero");
-
-  const currentValue = toNumber(payload.currentMarketValue);
-  const previousValue = toNumber(payload.previousMarketValue);
-  if (currentValue === null || previousValue === null || previousValue <= 0) {
-    els.marketValueMoM.textContent = "-";
-    els.marketValueMoM.classList.add("delta-zero");
-    return;
+  if (els.outperformMeta) {
+    els.outperformMeta.textContent =
+      performance.benchmarkPct !== null
+        ? `相对上证 ${formatPercent(performance.benchmarkPct)}`
+        : "暂无基准指数文本锚点";
   }
 
-  const diff = currentValue - previousValue;
-  const ratio = (diff / previousValue) * 100;
-  const valuePrefix = diff > 0 ? "+" : diff < 0 ? "-" : "";
-  const pctPrefix = ratio > 0 ? "+" : ratio < 0 ? "-" : "";
-  els.marketValueMoM.textContent = `${valuePrefix}${formatCurrency(Math.abs(diff), 0)} (${pctPrefix}${Math.abs(ratio).toFixed(1)}%)`;
-  els.marketValueMoM.classList.add(diff > 0 ? "delta-pos" : diff < 0 ? "delta-neg" : "delta-zero");
+  if (els.selectedSnapshotMeta) {
+    els.selectedSnapshotMeta.textContent = current
+      ? `${monthLabel(current)} · ${sourceLabel(current.source)} · ${formatNumber(payload.holdingCount, 0)} 只持仓 · ${formatDateTime(
+          current.postedAt
+        )}`
+      : "暂无月份数据";
+  }
 }
 
 function renderAll() {
@@ -1402,6 +1682,16 @@ async function loadData() {
     state.detailExpandedId = null;
   }
 
+  renderAll();
+}
+
+function selectSnapshotById(snapshotId) {
+  const value = String(snapshotId || "").trim();
+  if (!value || !state.snapshots.some((item) => item.id === value)) {
+    return;
+  }
+
+  state.selectedSnapshotId = value;
   renderAll();
 }
 
@@ -1451,8 +1741,70 @@ function bindEvents() {
   if (els.snapshotSelect) {
     els.snapshotSelect.addEventListener("change", (event) => {
       const value = String(event.target?.value || "").trim();
-      state.selectedSnapshotId = value || null;
-      renderAll();
+      selectSnapshotById(value);
+    });
+  }
+
+  if (els.monthPrevBtn) {
+    els.monthPrevBtn.addEventListener("click", () => {
+      const currentIndex = state.snapshots.findIndex((item) => item.id === state.selectedSnapshotId);
+      const nextSnapshot = currentIndex >= 0 ? state.snapshots[currentIndex + 1] : null;
+      if (nextSnapshot?.id) {
+        selectSnapshotById(nextSnapshot.id);
+      }
+    });
+  }
+
+  if (els.monthNextBtn) {
+    els.monthNextBtn.addEventListener("click", () => {
+      const currentIndex = state.snapshots.findIndex((item) => item.id === state.selectedSnapshotId);
+      const nextSnapshot = currentIndex > 0 ? state.snapshots[currentIndex - 1] : null;
+      if (nextSnapshot?.id) {
+        selectSnapshotById(nextSnapshot.id);
+      }
+    });
+  }
+
+  if (els.monthYearGroup) {
+    els.monthYearGroup.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const button = target.closest("[data-select-year]");
+      if (!button) {
+        return;
+      }
+
+      const year = String(button.getAttribute("data-select-year") || "").trim();
+      if (!year) {
+        return;
+      }
+
+      const nextSnapshot = state.snapshots.find((item) => getSnapshotMonthMeta(item).year === year);
+      if (nextSnapshot?.id) {
+        selectSnapshotById(nextSnapshot.id);
+      }
+    });
+  }
+
+  if (els.monthSegmentGroup) {
+    els.monthSegmentGroup.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      const button = target.closest("[data-select-snapshot]");
+      if (!button) {
+        return;
+      }
+
+      const snapshotId = String(button.getAttribute("data-select-snapshot") || "").trim();
+      if (snapshotId) {
+        selectSnapshotById(snapshotId);
+      }
     });
   }
 

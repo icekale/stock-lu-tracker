@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>持仓跟踪台</title>
+    <link rel="stylesheet" href="/design-tokens.css" />
     <link rel="stylesheet" href="/replica.css" />
     <link rel="stylesheet" href="/site-footer.css" />
   </head>
@@ -19,8 +20,68 @@
     </nav>
 
     <main class="replica-wrap">
-      <section class="replica-card">
+      <section class="replica-card dashboard-card">
+        <header class="dashboard-head">
+          <div class="dashboard-copy">
+            <p class="dashboard-eyebrow">Monthly Overview</p>
+            <h1 class="dashboard-title">月度仓位总览</h1>
+            <p class="dashboard-subtitle">优先展示总市值、收益、净值与相对指数表现，减少频繁扫表格。</p>
+          </div>
+          <section class="month-navigator" aria-label="月份切换">
+            <button id="monthPrevBtn" class="month-nav-btn" type="button" aria-label="上一个月份">‹</button>
+            <div class="month-nav-main">
+              <div id="monthYearGroup" class="month-year-group" role="tablist" aria-label="年份切换"></div>
+              <div id="monthSegmentGroup" class="month-segment-group" role="tablist" aria-label="月份切换"></div>
+            </div>
+            <button id="monthNextBtn" class="month-nav-btn" type="button" aria-label="下一个月份">›</button>
+            <label class="native-month-select">
+              <span class="native-month-label">月份</span>
+              <select id="snapshotSelect"></select>
+            </label>
+          </section>
+        </header>
+
+        <section class="overview-grid" aria-label="总览统计">
+          <article class="overview-card overview-card-primary">
+            <p class="metric-label">总市值</p>
+            <p class="metric-value metric-value-display" id="totalMarketValue">-</p>
+            <div class="overview-primary-meta">
+              <span class="metric-chip" id="latestMonthValue">-</span>
+              <span class="metric-meta" id="latestUpdateMeta">-</span>
+            </div>
+          </article>
+
+          <article class="overview-card overview-card-emphasis">
+            <p class="metric-label">月度收益</p>
+            <p class="metric-value" id="monthlyReturnValue">-</p>
+            <p class="metric-meta" id="monthlyReturnMeta">-</p>
+          </article>
+
+          <article class="overview-card">
+            <p class="metric-label">累积净值</p>
+            <p class="metric-value" id="cumulativeNetValue">-</p>
+            <p class="metric-meta" id="holdingCountMeta">-</p>
+          </article>
+
+          <article class="overview-card">
+            <p class="metric-label">跑赢指数</p>
+            <p class="metric-value" id="outperformValue">-</p>
+            <p class="metric-meta" id="outperformMeta">-</p>
+          </article>
+
+          <article class="overview-card">
+            <p class="metric-label">净值指数</p>
+            <p class="metric-value" id="netIndexValue">-</p>
+            <p class="metric-meta" id="yearStartIndexValue">-</p>
+          </article>
+        </section>
+
         <header class="replica-top">
+          <div class="replica-section-copy">
+            <h2 class="replica-section-title">持仓与调仓</h2>
+            <p class="replica-section-meta" id="selectedSnapshotMeta">-</p>
+          </div>
+
           <div class="replica-tabs" role="tablist" aria-label="持仓视图">
             <button
               id="tabLatestBtn"
@@ -31,7 +92,6 @@
               aria-controls="latestView"
               tabindex="-1"
             >
-              <span class="tab-icon">🧳</span>
               最新持仓
             </button>
             <button
@@ -43,39 +103,10 @@
               aria-controls="adjustView"
               tabindex="0"
             >
-              <span class="tab-icon">⇄</span>
               调仓记录
             </button>
           </div>
-
-          <label class="month-switch" for="snapshotSelect">
-            月份
-            <select id="snapshotSelect"></select>
-          </label>
         </header>
-
-        <section class="overview-strip" aria-label="总览统计">
-          <div class="overview-item">
-            <p class="overview-label">总市值</p>
-            <p class="overview-value" id="totalMarketValue">-</p>
-          </div>
-          <div class="overview-item">
-            <p class="overview-label">环比变化</p>
-            <p class="overview-value" id="marketValueMoM">-</p>
-          </div>
-          <div class="overview-item">
-            <p class="overview-label">净值指数</p>
-            <p class="overview-value" id="netIndexValue">-</p>
-          </div>
-          <div class="overview-item">
-            <p class="overview-label">年初净值指数</p>
-            <p class="overview-value" id="yearStartIndexValue">-</p>
-          </div>
-          <div class="overview-item">
-            <p class="overview-label">持仓数量</p>
-            <p class="overview-value" id="holdingCount">-</p>
-          </div>
-        </section>
 
         <section
           id="adjustView"
@@ -91,9 +122,9 @@
                   <th>代码</th>
                   <th>股票名称</th>
                   <th>操作记录</th>
-                  <th>变动股数</th>
-                  <th>最新成本</th>
-                  <th>持仓金额</th>
+                  <th class="numeric-head">变动股数</th>
+                  <th class="numeric-head">最新成本</th>
+                  <th class="numeric-head">持仓金额</th>
                 </tr>
               </thead>
               <tbody id="adjustRowsBody"></tbody>
@@ -105,12 +136,12 @@
             <div class="table-wrap replica-table-wrap">
               <table class="replica-table open-table">
                 <thead>
-                  <tr>
-                    <th>代码</th>
-                    <th>股票名称</th>
-                    <th>开仓股数</th>
-                    <th>历史持仓</th>
-                  </tr>
+                <tr>
+                  <th>代码</th>
+                  <th>股票名称</th>
+                  <th class="numeric-head">开仓股数</th>
+                  <th class="numeric-head">历史持仓</th>
+                </tr>
                 </thead>
                 <tbody id="openRowsBody"></tbody>
               </table>
@@ -122,12 +153,12 @@
             <div class="table-wrap replica-table-wrap">
               <table class="replica-table close-table">
                 <thead>
-                  <tr>
-                    <th>代码</th>
-                    <th>股票名称</th>
-                    <th>清仓股数</th>
-                    <th>历史持仓</th>
-                  </tr>
+                <tr>
+                  <th>代码</th>
+                  <th>股票名称</th>
+                  <th class="numeric-head">清仓股数</th>
+                  <th class="numeric-head">历史持仓</th>
+                </tr>
                 </thead>
                 <tbody id="closeRowsBody"></tbody>
               </table>
@@ -149,9 +180,9 @@
                 <tr>
                   <th>代码</th>
                   <th>股票名称</th>
-                  <th>持仓股数</th>
-                  <th>最新成本</th>
-                  <th>最新市值</th>
+                  <th class="numeric-head">持仓股数</th>
+                  <th class="numeric-head">最新成本</th>
+                  <th class="numeric-head">最新市值</th>
                 </tr>
               </thead>
               <tbody id="latestRowsBody"></tbody>

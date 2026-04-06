@@ -4,16 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>后台登录</title>
+    <link rel="stylesheet" href="/design-tokens.css" />
     <link rel="stylesheet" href="/site-footer.css" />
     <style>
       :root {
         color-scheme: light;
-        --bg: #f3f5f9;
-        --surface: #ffffff;
-        --text: #12151f;
-        --muted: #6f7685;
-        --line: rgba(12, 18, 34, 0.1);
-        --primary: #0071e3;
+        --bg: var(--color-bg);
+        --surface: var(--color-surface);
+        --text: var(--color-text);
+        --muted: var(--color-text-muted);
+        --line: var(--color-line);
+        --primary: var(--color-accent);
       }
 
       * {
@@ -23,7 +24,7 @@
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: "PingFang SC", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: var(--font-sans);
         background: radial-gradient(circle at 16% 20%, #e8f3ff 0%, transparent 45%),
           radial-gradient(circle at 85% 80%, #e9ecef 0%, transparent 45%), var(--bg);
         color: var(--text);

@@ -1,0 +1,85 @@
+:root {
+  color-scheme: light;
+  --font-sans: "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "JetBrains Mono", "Menlo", "Consolas", monospace;
+
+  --color-bg: #f5f5f7;
+  --color-bg-soft: #fbfbfd;
+  --color-bg-elevated: #f7f8fb;
+  --color-surface: #ffffff;
+  --color-surface-soft: rgba(255, 255, 255, 0.82);
+  --color-surface-muted: #f4f7fb;
+  --color-surface-accent: #eef4ff;
+  --color-text: #1d1d1f;
+  --color-text-strong: #222c3c;
+  --color-text-muted: #6e6e73;
+  --color-text-faint: #8b92a1;
+  --color-line: rgba(12, 18, 34, 0.1);
+  --color-line-strong: rgba(12, 18, 34, 0.16);
+  --color-line-soft: rgba(12, 18, 34, 0.06);
+  --color-accent: #0071e3;
+  --color-accent-strong: #005fcc;
+  --color-accent-soft: rgba(0, 113, 227, 0.1);
+  --color-success: #1f9d55;
+  --color-success-soft: rgba(31, 157, 85, 0.12);
+  --color-danger: #d84f5f;
+  --color-danger-soft: rgba(216, 79, 95, 0.12);
+  --color-warning: #c97800;
+  --color-warning-soft: rgba(201, 120, 0, 0.12);
+
+  --bg: var(--color-bg);
+  --bg-soft: var(--color-bg-soft);
+  --surface: var(--color-surface);
+  --surface-2: var(--color-bg-elevated);
+  --text: var(--color-text);
+  --muted: var(--color-text-muted);
+  --line: var(--color-line);
+  --line-soft: var(--color-line-soft);
+  --blue: var(--color-accent);
+  --blue-hover: var(--color-accent-strong);
+  --gain: var(--color-success);
+  --loss: var(--color-danger);
+  --warn: var(--color-warning);
+
+  --radius-2xs: 6px;
+  --radius-xs: 10px;
+  --radius-sm: 14px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+
+  --shadow-xs: 0 2px 10px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 14px 36px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 22px 56px rgba(15, 23, 42, 0.1);
+  --shadow-1: var(--shadow-md);
+  --shadow-2: var(--shadow-sm);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 28px;
+  --text-display: clamp(2rem, 4vw, 3.2rem);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}

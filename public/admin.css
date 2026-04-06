@@ -1,38 +1,7 @@
-:root {
-  --bg: #f5f5f7;
-  --bg-soft: #fbfbfd;
-  --surface: #ffffff;
-  --surface-2: #f9f9fb;
-  --text: #1d1d1f;
-  --muted: #6e6e73;
-  --line: rgba(0, 0, 0, 0.1);
-  --line-soft: rgba(0, 0, 0, 0.06);
-  --blue: #0071e3;
-  --blue-hover: #0077ed;
-  --gain: #1f9d55;
-  --loss: #d62828;
-  --warn: #c97800;
-  --radius-xl: 30px;
-  --radius-lg: 22px;
-  --radius-md: 14px;
-  --shadow-1: 0 12px 34px rgba(15, 23, 42, 0.08);
-  --shadow-2: 0 3px 12px rgba(15, 23, 42, 0.06);
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-}
-
 body {
   --page-gutter: clamp(18px, 3vw, 36px);
   --shell-width: min(1180px, calc(100vw - (var(--page-gutter) * 2)));
-  font-family: "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  font-family: var(--font-sans);
   color: var(--text);
   background:
     radial-gradient(circle at 10% -5%, rgba(0, 113, 227, 0.12), transparent 36%),
