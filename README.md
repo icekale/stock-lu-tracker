@@ -134,8 +134,29 @@ docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PAS
 
 - 构建镜像时不会打包你本机的 `data/store.json`、Cookie 或历史备份文件
 - 首次启动会在挂载目录里自动创建运行所需的数据文件
+- 上面这组命令适合本机测试；如果你要推送到 Docker Hub，请使用下面的多架构发布脚本
 
-### 6.4 Unraid（docker compose，bridge + 默认权限）
+### 6.4 本地发布 Docker Hub（多架构）
+
+为避免手动推送时只发布了单一架构，仓库内已提供多架构发布脚本：
+
+```bash
+./scripts/docker-publish-multiarch.sh
+```
+
+如需显式指定标签：
+
+```bash
+./scripts/docker-publish-multiarch.sh v0.1.15
+```
+
+特点：
+
+- 固定发布 `linux/amd64` 和 `linux/arm64`
+- 同时推送版本标签和 `latest`
+- 推送完成后自动校验 manifest，确认两个架构都存在
+
+### 6.5 Unraid（docker compose，bridge + 默认权限）
 
 > 适用于 Unraid 的 Compose Manager，使用 `bridge` 网络模式，数据目录映射到 `appdata`。
 
@@ -169,7 +190,7 @@ services:
 - 如果你通过反向代理 `https` 访问后台，可将 `ADMIN_COOKIE_SECURE` 改为 `true`
 - 如需升级到后续版本，只要把 `image` 标签改成新的版本号，再执行一次拉取和重建即可
 
-### 6.5 Unraid 升级步骤
+### 6.6 Unraid 升级步骤
 
 如果你当前已经在 Unraid 上运行旧版本，可按下面步骤升级到新版本：
 
@@ -199,3 +220,5 @@ docker compose -f docker-compose.unraid.yml up -d
 - 当代码 push 到 `main`：自动构建并推送 `icekale/stock-lu-tracker:latest`
 - 当 push 标签（如 `v0.1.1`）：自动推送对应版本标签
 - 也支持在 GitHub Actions 页面手动触发
+- 工作流固定发布 `linux/amd64` + `linux/arm64`
+- 推送后会自动校验远端 manifest，缺少任一架构都会直接失败

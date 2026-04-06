@@ -45,11 +45,26 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
+          provenance: false
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify Multi-Arch Manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "Inspecting $tag"
+            output="$(docker buildx imagetools inspect "$tag")"
+            echo "$output"
+            grep -q "linux/amd64" <<<"$output"
+            grep -q "linux/arm64" <<<"$output"
+          done <<< "${{ steps.meta.outputs.tags }}"
 
       - name: Update Docker Hub Description
         uses: peter-evans/dockerhub-description@v5
