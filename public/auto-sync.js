@@ -655,6 +655,14 @@ function renderForm() {
     input.value = value;
   };
 
+  const setPlaceholder = (name, value) => {
+    const input = els.autoConfigForm.elements?.[name];
+    if (!input) {
+      return;
+    }
+    input.setAttribute("placeholder", value);
+  };
+
   setValue("enabled", String(Boolean(config.enabled)));
   setValue("intervalMinutes", String(config.intervalMinutes || 180));
   setValue("maxPostsPerSource", String(config.maxPostsPerSource || 6));
@@ -666,6 +674,24 @@ function renderForm() {
   setValue("backfillMaxPages", String(config.backfillMaxPages || 36));
   setValue("backfillPageSize", String(config.backfillPageSize || 20));
   setValue("keywords", Array.isArray(config.keywords) ? config.keywords.join(",") : "");
+  setPlaceholder(
+    "qwenApiKey",
+    config.hasQwenApiKey
+      ? "已保存 Qwen Key，留空则保持不变；如需替换，直接输入新 Key"
+      : "留空则保持已保存值，或读取环境变量 DASHSCOPE_API_KEY"
+  );
+  setPlaceholder(
+    "xueqiuCookie",
+    config.hasXueqiuCookie
+      ? "已保存雪球 Cookie，留空则保持不变；如需替换，直接粘贴新 Cookie"
+      : "粘贴完整 Cookie；留空则保持已保存值"
+  );
+  setPlaceholder(
+    "weiboCookie",
+    config.hasWeiboCookie
+      ? "已保存微博 Cookie，留空则保持不变；如需替换，直接粘贴新 Cookie"
+      : "粘贴完整 Cookie；留空则保持已保存值"
+  );
 
   const runtime = state.autoTracking?.runtime || {};
   const pinnedCount = Array.isArray(config.pinnedPostUrls) ? config.pinnedPostUrls.length : 0;
@@ -1338,9 +1364,23 @@ async function handleSaveConfig(event) {
   const weiboCookie = String(payload.weiboCookie || "").trim();
   const qwenApiKey = String(payload.qwenApiKey || "").trim();
 
-  payload.xueqiuCookie = xueqiuCookie;
-  payload.weiboCookie = weiboCookie;
-  payload.qwenApiKey = qwenApiKey;
+  if (xueqiuCookie) {
+    payload.xueqiuCookie = xueqiuCookie;
+  } else {
+    delete payload.xueqiuCookie;
+  }
+
+  if (weiboCookie) {
+    payload.weiboCookie = weiboCookie;
+  } else {
+    delete payload.weiboCookie;
+  }
+
+  if (qwenApiKey) {
+    payload.qwenApiKey = qwenApiKey;
+  } else {
+    delete payload.qwenApiKey;
+  }
 
   try {
     setActionBusy(true);

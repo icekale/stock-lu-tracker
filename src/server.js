@@ -1671,6 +1671,19 @@ function hasOwnPropertyValue(object, key) {
   return Boolean(object) && Object.prototype.hasOwnProperty.call(object, key);
 }
 
+function readPatchedSecretValue(payload, valueKey, clearKey, fallbackValue = "") {
+  if (hasOwnPropertyValue(payload, clearKey) && Boolean(payload[clearKey])) {
+    return "";
+  }
+
+  if (!hasOwnPropertyValue(payload, valueKey)) {
+    return fallbackValue;
+  }
+
+  const nextValue = String(payload[valueKey] || "").trim();
+  return nextValue || fallbackValue;
+}
+
 function buildMonthlyUpdatesPayload(store) {
   return {
     updates: sortByRecentDate(store.monthlyUpdates || [], "postedAt"),
@@ -2192,17 +2205,24 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
         patch.backfillPageSize = Number(payload.backfillPageSize);
       }
 
-      if (hasOwnPropertyValue(payload, "xueqiuCookie")) {
-        patch.xueqiuCookie = String(payload.xueqiuCookie || "").trim();
-      }
-
-      if (hasOwnPropertyValue(payload, "weiboCookie")) {
-        patch.weiboCookie = String(payload.weiboCookie || "").trim();
-      }
-
-      if (hasOwnPropertyValue(payload, "qwenApiKey")) {
-        patch.qwenApiKey = String(payload.qwenApiKey || "").trim();
-      }
+      patch.xueqiuCookie = readPatchedSecretValue(
+        payload,
+        "xueqiuCookie",
+        "clearXueqiuCookie",
+        patch.xueqiuCookie
+      );
+      patch.weiboCookie = readPatchedSecretValue(
+        payload,
+        "weiboCookie",
+        "clearWeiboCookie",
+        patch.weiboCookie
+      );
+      patch.qwenApiKey = readPatchedSecretValue(
+        payload,
+        "qwenApiKey",
+        "clearQwenApiKey",
+        patch.qwenApiKey
+      );
 
       autoTracking.config = mergeAutoTrackingConfig(patch);
     });

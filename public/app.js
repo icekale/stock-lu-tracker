@@ -1398,12 +1398,8 @@ async function loadData() {
     state.selectedSnapshotId = state.snapshots[0]?.id || null;
   }
 
-  if (!state.detailExpandedId && state.selectedSnapshotId) {
-    state.detailExpandedId = state.selectedSnapshotId;
-  }
-
   if (state.detailExpandedId && !state.snapshots.some((item) => item.id === state.detailExpandedId)) {
-    state.detailExpandedId = state.selectedSnapshotId || state.snapshots[0]?.id || null;
+    state.detailExpandedId = null;
   }
 
   renderAll();
@@ -1456,7 +1452,6 @@ function bindEvents() {
     els.snapshotSelect.addEventListener("change", (event) => {
       const value = String(event.target?.value || "").trim();
       state.selectedSnapshotId = value || null;
-      state.detailExpandedId = value || null;
       renderAll();
     });
   }
