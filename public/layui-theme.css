@@ -1,0 +1,228 @@
+:root {
+  --lay-color-primary: var(--color-accent);
+  --lay-color-accent: var(--color-success);
+  --lay-color-blue: var(--color-accent);
+  --lay-color-green: var(--color-success);
+  --lay-color-red: var(--color-danger);
+  --lay-color-orange: var(--color-warning);
+  --lay-color-purple: #6b5cff;
+  --lay-color-black: var(--color-text-heading);
+  --lay-color-gray: var(--color-bg-soft);
+  --lay-gray-100: #fbfcfd;
+  --lay-gray-200: #f5f7fa;
+  --lay-gray-300: #e8edf3;
+  --lay-gray-400: #d7dee8;
+  --lay-gray-500: #c3cbd8;
+  --lay-gray-600: #97a3b6;
+  --lay-gray-700: #728198;
+  --lay-gray-800: #556277;
+  --lay-gray-900: #39475c;
+  --lay-border-color: rgba(15, 23, 42, 0.09);
+  --lay-border-color-accent: rgba(15, 23, 42, 0.14);
+  --lay-border-radius: 14px;
+  --lay-box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+  --lay-box-shadow-sm: 0 6px 16px rgba(15, 23, 42, 0.05);
+  --lay-box-shadow-lg: 0 28px 60px rgba(15, 23, 42, 0.14);
+  --lay-font-family: var(--font-sans);
+  --lay-font-monospace: var(--font-mono);
+  --lay-spacing: 16px;
+  --lay-spacing-xs: 6px;
+  --lay-spacing-sm: 10px;
+  --lay-spacing-lg: 24px;
+  --lay-spacing-xl: 32px;
+}
+
+body {
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+}
+
+.layui-header,
+.layui-panel,
+.layui-card,
+.layui-table,
+.layui-btn,
+.layui-input,
+.layui-textarea {
+  font-family: inherit;
+}
+
+.layui-header {
+  background: transparent;
+}
+
+.layui-panel,
+.layui-card {
+  border-radius: var(--radius-sm);
+  border: var(--border-soft);
+  box-shadow: var(--shadow-xs);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.layui-card {
+  overflow: hidden;
+}
+
+.layui-card-header {
+  height: auto;
+  line-height: 1.4;
+  padding: 16px 18px 0;
+  border-bottom: 0;
+  background: transparent;
+  font-weight: var(--font-weight-semibold);
+}
+
+.layui-card-body {
+  padding: 18px;
+}
+
+.layui-btn {
+  height: 38px;
+  line-height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: var(--text-ui-md);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.01em;
+  box-shadow: var(--shadow-button-soft);
+  transition: transform var(--ease-standard), box-shadow var(--ease-standard), background var(--ease-standard), border-color var(--ease-standard), color var(--ease-standard), opacity var(--ease-standard);
+}
+
+.layui-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
+}
+
+.layui-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-xs), var(--shadow-focus-ring);
+}
+
+.layui-btn[disabled],
+.layui-btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.layui-btn-primary {
+  border-color: var(--color-line);
+  background: linear-gradient(180deg, var(--color-surface-button-hover), var(--color-surface-button));
+  color: var(--color-text-strong);
+}
+
+.layui-btn-primary:hover {
+  border-color: var(--color-line-strong);
+  background: linear-gradient(180deg, #ffffff, var(--color-surface-button-active));
+}
+
+.layui-btn-normal {
+  background: linear-gradient(180deg, #2a86ff, var(--color-accent));
+  border-color: transparent;
+  color: var(--color-white);
+}
+
+.layui-btn-normal:hover {
+  background: linear-gradient(180deg, #4a97ff, var(--color-accent-strong));
+}
+
+.layui-btn-fluid {
+  width: 100%;
+}
+
+.layui-badge,
+.layui-badge-rim {
+  border-radius: 999px;
+  font-weight: var(--font-weight-semibold);
+}
+
+.layui-table {
+  margin: 0;
+  color: var(--color-text);
+  background: transparent;
+}
+
+.layui-table th {
+  font-weight: var(--font-weight-semibold);
+}
+
+.layui-table thead tr {
+  background: var(--color-bg-table-head-soft);
+}
+
+.layui-table tbody tr:hover {
+  background: rgba(22, 119, 255, 0.03);
+}
+
+.layui-breadcrumb a,
+.layui-breadcrumb span[lay-separator] {
+  color: var(--color-text-muted);
+}
+
+.layui-breadcrumb a:hover {
+  color: var(--color-accent);
+}
+
+
+.form-control {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border: var(--border-default);
+  border-radius: var(--radius-control);
+  background: linear-gradient(180deg, var(--color-surface-control), var(--color-bg-soft));
+  color: var(--color-text-heading);
+  font-size: var(--text-ui-md);
+  box-shadow: var(--shadow-control-soft);
+  transition: border-color var(--ease-standard), box-shadow var(--ease-standard), background var(--ease-standard), color var(--ease-standard);
+}
+
+.form-control::placeholder {
+  color: var(--color-text-faint);
+}
+
+.form-control:hover {
+  border-color: var(--color-line-strong);
+  background: linear-gradient(180deg, var(--color-surface-control-hover), var(--color-surface-control));
+}
+
+select.form-control {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(57, 71, 92, 0.7) 50%),
+    linear-gradient(135deg, rgba(57, 71, 92, 0.7) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
+}
+
+textarea.form-control {
+  min-height: 112px;
+  padding: 11px 14px;
+  resize: vertical;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: var(--color-line-focus);
+  box-shadow: var(--shadow-focus-ring);
+  background: linear-gradient(180deg, #ffffff, var(--color-surface-control));
+}
+
+.form-control[readonly],
+.form-control:disabled {
+  background: linear-gradient(180deg, var(--color-surface-control-readonly), var(--color-bg-soft));
+  color: var(--color-text-muted);
+  box-shadow: none;
+}

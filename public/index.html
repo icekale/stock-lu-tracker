@@ -3,215 +3,266 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>持仓跟踪台</title>
+    <title>超级鹿鼎公持仓自动跟踪</title>
     <link rel="stylesheet" href="/design-tokens.css" />
+    <link rel="stylesheet" href="/vendor/layui/css/layui.css" />
+    <link rel="stylesheet" href="/layui-theme.css" />
     <link rel="stylesheet" href="/replica.css" />
     <link rel="stylesheet" href="/site-footer.css" />
   </head>
-  <body id="pageTop" class="replica-body home-page">
-    <nav class="apple-nav">
-      <div class="apple-nav-inner">
-        <p class="nav-brand">超级鹿鼎公持仓自动跟踪</p>
-        <div class="nav-links">
-          <p class="nav-subtitle">主页看板</p>
-          <a class="nav-link-btn" href="/admin.html">后台配置</a>
+  <body id="pageTop" class="home-page">
+    <header class="layui-header app-header">
+      <div class="layui-container app-header-inner">
+        <div class="app-brand-stack">
+          <a class="app-brand" href="/">超级鹿鼎公持仓自动跟踪</a>
+          <p class="app-brand-meta">Portfolio Tracker Dashboard</p>
+        </div>
+        <div class="app-header-actions">
+          <span class="app-header-note">主页总览</span>
+          <a class="layui-btn layui-btn-primary layui-btn-sm" href="/admin.html">后台配置</a>
         </div>
       </div>
-    </nav>
+    </header>
 
-    <main class="replica-wrap">
-      <section class="replica-card dashboard-card">
-        <header class="dashboard-head">
-          <div class="dashboard-copy">
-            <p class="dashboard-eyebrow">Monthly Overview</p>
-            <h1 class="dashboard-title">月度仓位总览</h1>
-            <p class="dashboard-subtitle">优先展示总市值、收益、净值与相对指数表现，减少频繁扫表格。</p>
+    <main class="page-main">
+      <div class="layui-container page-shell page-shell-home">
+        <section class="layui-panel dashboard-shell">
+          <div class="dashboard-shell-top">
+            <div class="dashboard-heading-row">
+              <div class="dashboard-title-group">
+                <h1 class="dashboard-title">月度仓位总览</h1>
+                <div class="dashboard-inline-meta">
+                  <span class="dashboard-month-pill" id="latestMonthValue">-</span>
+                  <span class="dashboard-update-text" id="latestUpdateMeta">-</span>
+                </div>
+              </div>
+            </div>
+
+            <section class="month-control-panel" aria-label="月份切换">
+              <div class="month-control-main">
+                <button id="monthPrevBtn" class="month-nav-btn" type="button" aria-label="上一个月份">
+                  <i class="layui-icon layui-icon-left"></i>
+                </button>
+                <div class="month-nav-stack">
+                  <div id="monthYearGroup" class="month-year-group" role="tablist" aria-label="年份切换"></div>
+                  <div id="monthSegmentGroup" class="month-segment-group" role="tablist" aria-label="月份切换"></div>
+                </div>
+                <button id="monthNextBtn" class="month-nav-btn" type="button" aria-label="下一个月份">
+                  <i class="layui-icon layui-icon-right"></i>
+                </button>
+              </div>
+              <label class="native-month-select">
+                <span class="native-month-label">月份</span>
+                <select id="snapshotSelect" class="month-native-input"></select>
+              </label>
+            </section>
           </div>
-          <section class="month-navigator" aria-label="月份切换">
-            <button id="monthPrevBtn" class="month-nav-btn" type="button" aria-label="上一个月份">‹</button>
-            <div class="month-nav-main">
-              <div id="monthYearGroup" class="month-year-group" role="tablist" aria-label="年份切换"></div>
-              <div id="monthSegmentGroup" class="month-segment-group" role="tablist" aria-label="月份切换"></div>
-            </div>
-            <button id="monthNextBtn" class="month-nav-btn" type="button" aria-label="下一个月份">›</button>
-            <label class="native-month-select">
-              <span class="native-month-label">月份</span>
-              <select id="snapshotSelect"></select>
-            </label>
-          </section>
-        </header>
 
-        <section class="overview-grid" aria-label="总览统计">
-          <article class="overview-card overview-card-primary">
-            <p class="metric-label">总市值</p>
-            <p class="metric-value metric-value-display" id="totalMarketValue">-</p>
-            <div class="overview-primary-meta">
-              <span class="metric-chip" id="latestMonthValue">-</span>
-              <span class="metric-meta" id="latestUpdateMeta">-</span>
-            </div>
-          </article>
+          <div class="overview-grid" aria-label="总览统计">
+            <article class="layui-card overview-card">
+              <div class="layui-card-body">
+                <p class="metric-label">总市值</p>
+                <p class="metric-value metric-value-display" id="totalMarketValue">-</p>
+                <p class="metric-meta">按当月持仓金额汇总</p>
+              </div>
+            </article>
 
-          <article class="overview-card overview-card-emphasis">
-            <p class="metric-label">月度收益</p>
-            <p class="metric-value" id="monthlyReturnValue">-</p>
-            <p class="metric-meta" id="monthlyReturnMeta">-</p>
-          </article>
+            <article class="layui-card overview-card">
+              <div class="layui-card-body">
+                <p class="metric-label">月度收益</p>
+                <p class="metric-value" id="monthlyReturnValue">-</p>
+                <p class="metric-meta" id="monthlyReturnMeta">-</p>
+              </div>
+            </article>
 
-          <article class="overview-card">
-            <p class="metric-label">累积净值</p>
-            <p class="metric-value" id="cumulativeNetValue">-</p>
-            <p class="metric-meta" id="holdingCountMeta">-</p>
-          </article>
+            <article class="layui-card overview-card">
+              <div class="layui-card-body">
+                <p class="metric-label">累积净值</p>
+                <p class="metric-value" id="cumulativeNetValue">-</p>
+                <p class="metric-meta" id="holdingCountMeta">-</p>
+              </div>
+            </article>
 
-          <article class="overview-card">
-            <p class="metric-label">跑赢指数</p>
-            <p class="metric-value" id="outperformValue">-</p>
-            <p class="metric-meta" id="outperformMeta">-</p>
-          </article>
+            <article class="layui-card overview-card">
+              <div class="layui-card-body">
+                <p class="metric-label">跑赢指数</p>
+                <p class="metric-value" id="outperformValue">-</p>
+                <p class="metric-meta" id="outperformMeta">-</p>
+              </div>
+            </article>
 
-          <article class="overview-card">
-            <p class="metric-label">净值指数</p>
-            <p class="metric-value" id="netIndexValue">-</p>
-            <p class="metric-meta" id="yearStartIndexValue">-</p>
-          </article>
+            <article class="layui-card overview-card">
+              <div class="layui-card-body">
+                <p class="metric-label">净值指数</p>
+                <p class="metric-value" id="netIndexValue">-</p>
+                <p class="metric-meta" id="yearStartIndexValue">-</p>
+              </div>
+            </article>
+          </div>
         </section>
 
-        <header class="replica-top">
-          <div class="replica-section-copy">
-            <h2 class="replica-section-title">持仓与调仓</h2>
-            <p class="replica-section-meta" id="selectedSnapshotMeta">-</p>
-          </div>
+        <section class="layui-panel content-shell holdings-shell">
+          <header class="section-head holdings-head">
+            <div class="holdings-copy">
+              <p class="section-eyebrow">Holdings & Adjustments</p>
+              <h2 class="section-title">持仓与调仓</h2>
+              <p class="section-meta" id="selectedSnapshotMeta">-</p>
+            </div>
 
-          <div class="replica-tabs" role="tablist" aria-label="持仓视图">
-            <button
-              id="tabLatestBtn"
-              type="button"
-              class="replica-tab-btn"
-              role="tab"
-              aria-selected="false"
-              aria-controls="latestView"
-              tabindex="-1"
-            >
-              最新持仓
-            </button>
-            <button
-              id="tabAdjustBtn"
-              type="button"
-              class="replica-tab-btn active"
-              role="tab"
-              aria-selected="true"
-              aria-controls="adjustView"
-              tabindex="0"
-            >
-              调仓记录
-            </button>
-          </div>
-        </header>
+            <div class="holdings-toolbar">
+              <div class="view-toggle holdings-view-toggle" role="tablist" aria-label="持仓视图">
+              <button
+                id="tabLatestBtn"
+                type="button"
+                class="layui-btn layui-btn-primary view-toggle-btn"
+                role="tab"
+                aria-selected="false"
+                aria-controls="latestView"
+                tabindex="-1"
+              >
+                最新持仓
+              </button>
+              <button
+                id="tabAdjustBtn"
+                type="button"
+                class="layui-btn layui-btn-primary view-toggle-btn active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="adjustView"
+                tabindex="0"
+              >
+                调仓记录
+              </button>
+              </div>
+            </div>
+          </header>
 
-        <section
-          id="adjustView"
-          class="replica-view"
-          role="tabpanel"
-          aria-labelledby="tabAdjustBtn"
-          aria-hidden="false"
-        >
-          <div class="table-wrap replica-table-wrap">
-            <table class="replica-table adjust-table">
-              <thead>
-                <tr>
-                  <th>代码</th>
-                  <th>股票名称</th>
-                  <th>操作记录</th>
-                  <th class="numeric-head">变动股数</th>
-                  <th class="numeric-head">最新成本</th>
-                  <th class="numeric-head">持仓金额</th>
-                </tr>
-              </thead>
-              <tbody id="adjustRowsBody"></tbody>
-            </table>
-          </div>
-
-          <section class="replica-subsection">
-            <h3 class="sub-title open">新开仓</h3>
-            <div class="table-wrap replica-table-wrap">
-              <table class="replica-table open-table">
+          <section id="adjustView" class="replica-view" role="tabpanel" aria-labelledby="tabAdjustBtn" aria-hidden="false">
+            <div class="table-shell">
+              <table class="layui-table replica-table adjust-table">
                 <thead>
-                <tr>
-                  <th>代码</th>
-                  <th>股票名称</th>
-                  <th class="numeric-head">开仓股数</th>
-                  <th class="numeric-head">历史持仓</th>
-                </tr>
+                  <tr>
+                    <th>代码</th>
+                    <th>股票名称</th>
+                    <th>操作记录</th>
+                    <th class="numeric-head">变动股数</th>
+                    <th class="numeric-head">最新成本</th>
+                    <th class="numeric-head">持仓金额</th>
+                  </tr>
                 </thead>
-                <tbody id="openRowsBody"></tbody>
+                <tbody id="adjustRowsBody"></tbody>
+              </table>
+            </div>
+
+            <div class="subsection-grid">
+              <section class="layui-card subsection-card">
+                <div class="layui-card-header subsection-header">
+                  <div>
+                    <p class="subsection-kicker">Open Positions</p>
+                    <h3 class="subsection-title">新开仓</h3>
+                  </div>
+                </div>
+                <div class="layui-card-body">
+                  <div class="table-shell compact">
+                    <table class="layui-table replica-table open-table">
+                      <thead>
+                        <tr>
+                          <th>代码</th>
+                          <th>股票名称</th>
+                          <th class="numeric-head">开仓股数</th>
+                          <th class="numeric-head">历史持仓</th>
+                        </tr>
+                      </thead>
+                      <tbody id="openRowsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+
+              <section class="layui-card subsection-card">
+                <div class="layui-card-header subsection-header">
+                  <div>
+                    <p class="subsection-kicker">Closed Positions</p>
+                    <h3 class="subsection-title">已清仓</h3>
+                  </div>
+                </div>
+                <div class="layui-card-body">
+                  <div class="table-shell compact">
+                    <table class="layui-table replica-table close-table">
+                      <thead>
+                        <tr>
+                          <th>代码</th>
+                          <th>股票名称</th>
+                          <th class="numeric-head">清仓股数</th>
+                          <th class="numeric-head">历史持仓</th>
+                        </tr>
+                      </thead>
+                      <tbody id="closeRowsBody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section id="latestView" class="replica-view hidden" role="tabpanel" aria-labelledby="tabLatestBtn" hidden aria-hidden="true">
+            <div class="table-shell">
+              <table class="layui-table replica-table latest-table">
+                <thead>
+                  <tr>
+                    <th>代码</th>
+                    <th>股票名称</th>
+                    <th class="numeric-head">持仓股数</th>
+                    <th class="numeric-head">最新成本</th>
+                    <th class="numeric-head">最新市值</th>
+                  </tr>
+                </thead>
+                <tbody id="latestRowsBody"></tbody>
               </table>
             </div>
           </section>
+        </section>
 
-          <section class="replica-subsection">
-            <h3 class="sub-title close">已清仓</h3>
-            <div class="table-wrap replica-table-wrap">
-              <table class="replica-table close-table">
-                <thead>
-                <tr>
-                  <th>代码</th>
-                  <th>股票名称</th>
-                  <th class="numeric-head">清仓股数</th>
-                  <th class="numeric-head">历史持仓</th>
-                </tr>
-                </thead>
-                <tbody id="closeRowsBody"></tbody>
-              </table>
+        <section class="layui-panel chart-shell">
+          <header class="section-head chart-head">
+            <div>
+              <p class="section-eyebrow">Monthly Net Worth</p>
+              <h2 class="section-title">月度净值曲线</h2>
+              <p class="section-meta">优先使用帖子中的累积净值，其次回退到持仓市值。</p>
             </div>
-          </section>
-        </section>
-
-        <section
-          id="latestView"
-          class="replica-view hidden"
-          role="tabpanel"
-          aria-labelledby="tabLatestBtn"
-          hidden
-          aria-hidden="true"
-        >
-          <div class="table-wrap replica-table-wrap">
-            <table class="replica-table latest-table">
-              <thead>
-                <tr>
-                  <th>代码</th>
-                  <th>股票名称</th>
-                  <th class="numeric-head">持仓股数</th>
-                  <th class="numeric-head">最新成本</th>
-                  <th class="numeric-head">最新市值</th>
-                </tr>
-              </thead>
-              <tbody id="latestRowsBody"></tbody>
-            </table>
+          </header>
+          <div class="chart-summary-row" aria-label="图表摘要">
+            <article class="chart-summary-card">
+              <span class="chart-summary-label">覆盖月份</span>
+              <strong id="chartSeriesCount" class="chart-summary-value">-</strong>
+            </article>
+            <article class="chart-summary-card">
+              <span class="chart-summary-label">最近月份</span>
+              <strong id="chartLatestMonth" class="chart-summary-value">-</strong>
+            </article>
+            <article class="chart-summary-card chart-summary-card-wide">
+              <span class="chart-summary-label">最近净值</span>
+              <strong id="chartLatestValue" class="chart-summary-value">-</strong>
+              <span id="chartSeriesHint" class="chart-summary-meta">优先使用帖子中的累积净值，其次回退到持仓市值。</span>
+            </article>
+          </div>
+          <div class="networth-canvas-wrap">
+            <p id="monthlyChartEmpty" class="chart-empty hidden">暂无可绘制的月度净值数据</p>
+            <canvas id="monthlyNetworthChart"></canvas>
           </div>
         </section>
-      </section>
 
-      <section class="replica-card networth-card">
-        <header class="networth-head">
-          <h3>月度净值曲线</h3>
-          <p>优先使用帖子中的累积净值，其次回退到持仓市值</p>
-        </header>
-        <div class="networth-canvas-wrap">
-          <p id="monthlyChartEmpty" class="chart-empty hidden">暂无可绘制的月度净值数据</p>
-          <canvas id="monthlyNetworthChart"></canvas>
-        </div>
-      </section>
-
-      <section class="replica-card detail-list-card">
-        <header class="detail-list-head">
-          <div>
-            <p class="detail-eyebrow">Snapshot Detail</p>
-            <h3>月度详情列表</h3>
-            <p id="detailListMeta">按月份与日期展开查看原帖、截图与 OCR 依据</p>
-          </div>
-        </header>
-        <div id="detailSnapshotList" class="detail-list"></div>
-      </section>
+        <section class="layui-panel detail-list-shell">
+          <header class="section-head detail-list-head">
+            <div>
+              <p class="section-eyebrow">Snapshot Detail</p>
+              <h2 class="section-title">月度详情列表</h2>
+              <p id="detailListMeta" class="section-meta">按月份与日期展开查看原帖、截图与 OCR 依据</p>
+            </div>
+          </header>
+          <div id="detailSnapshotList" class="detail-list"></div>
+        </section>
+      </div>
     </main>
 
     <footer class="site-footer site-footer-home" data-site-footer>
@@ -219,7 +270,7 @@
         <div class="site-footer-meta">
           <span class="site-footer-item" data-footer-author data-fallback="Kale">Kale</span>
           <span class="site-footer-sep">·</span>
-          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.14">v0.1.14</span>
+          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.15">v0.1.15</span>
           <span class="site-footer-sep">·</span>
           <a
             class="site-footer-link"
@@ -231,12 +282,7 @@
             aria-label="GitHub：icekale/stock-lu-tracker"
             title="GitHub：icekale/stock-lu-tracker"
           >
-            <svg
-              class="site-footer-github-icon"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-              focusable="false"
-            >
+            <svg class="site-footer-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
               <path
                 fill="currentColor"
                 d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.67 7.67 0 0 1 8 4.98c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
@@ -250,6 +296,7 @@
 
     <a class="page-top-button" href="#pageTop" aria-label="回到顶部" title="回到顶部">↑</a>
 
+    <script src="/vendor/layui/layui.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="/site-footer.js"></script>
     <script src="/app.js"></script>

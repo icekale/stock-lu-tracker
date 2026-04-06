@@ -5,352 +5,490 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>后台配置</title>
     <link rel="stylesheet" href="/design-tokens.css" />
+    <link rel="stylesheet" href="/vendor/layui/css/layui.css" />
+    <link rel="stylesheet" href="/layui-theme.css" />
     <link rel="stylesheet" href="/admin.css" />
     <link rel="stylesheet" href="/site-footer.css" />
   </head>
   <body id="pageTop" class="admin-page">
-    <nav class="apple-nav">
-      <div class="apple-nav-inner">
-        <p class="nav-brand">超级鹿鼎公持仓自动跟踪</p>
-        <div class="nav-links">
-          <p class="nav-subtitle">后台配置页</p>
-          <a class="nav-link-btn" href="/">返回主页</a>
+    <header class="layui-header app-header">
+      <div class="layui-container app-header-inner">
+        <div class="app-brand-stack">
+          <a class="app-brand" href="/">超级鹿鼎公持仓自动跟踪</a>
+          <p class="app-brand-meta">Admin Control Center</p>
+        </div>
+        <div class="app-header-actions">
+          <span class="app-header-note">后台配置页</span>
+          <a class="layui-btn layui-btn-primary layui-btn-sm" href="/">返回主页</a>
         </div>
       </div>
-    </nav>
+    </header>
 
-    <main class="app-shell config-shell">
-      <section class="panel config-panel" id="admin-config">
-        <div class="panel-head">
-          <h2>自动抓取配置</h2>
-          <p>超级鹿鼎公</p>
-        </div>
-
-        <form id="autoConfigForm" class="form-grid compact-form">
-          <label>
-            自动同步
-            <select name="enabled">
-              <option value="true">开启</option>
-              <option value="false">关闭</option>
-            </select>
-          </label>
-          <label>
-            同步间隔（分钟）
-            <input name="intervalMinutes" type="number" min="15" max="1440" value="180" />
-          </label>
-          <label>
-            单源抓取条数
-            <input name="maxPostsPerSource" type="number" min="1" max="20" value="6" />
-          </label>
-          <label>
-            OCR 识别
-            <select name="ocrEnabled">
-              <option value="true">开启</option>
-              <option value="false">关闭</option>
-            </select>
-          </label>
-          <label>
-            OCR 引擎
-            <select name="ocrProvider">
-              <option value="auto">自动（有 Qwen Key 时优先）</option>
-              <option value="qwen">Qwen OCR 优先</option>
-              <option value="local">本地 Tesseract</option>
-            </select>
-          </label>
-          <label>
-            每条帖子最多识别图片数
-            <input name="ocrMaxImagesPerPost" type="number" min="1" max="5" value="1" />
-          </label>
-          <label class="full-row">
-            Qwen OCR API Key
-            <input
-              name="qwenApiKey"
-              type="password"
-              autocomplete="off"
-              placeholder="留空则保持已保存值，或读取环境变量 DASHSCOPE_API_KEY"
-            />
-          </label>
-          <label class="full-row">
-            置顶帖子链接（每行一条，优先抓取）
-            <textarea
-              name="pinnedPostUrls"
-              rows="3"
-              placeholder="https://xueqiu.com/8790885129/381996320"
-            >https://xueqiu.com/8790885129/381996320</textarea>
-          </label>
-          <label class="full-row">
-            雪球标题匹配正则（历史回溯过滤）
-            <input
-              name="xueqiuTitleRegex"
-              placeholder="游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图"
-              value="游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图"
-            />
-          </label>
-          <label>
-            回溯最大页数
-            <input name="backfillMaxPages" type="number" min="1" max="120" value="36" />
-          </label>
-          <label>
-            回溯每页条数
-            <input name="backfillPageSize" type="number" min="5" max="50" value="20" />
-          </label>
-          <label>
-            关键词（逗号分隔）
-            <input
-              name="keywords"
-              placeholder="最新持仓, 调仓, 新开仓, 已清仓"
-              value="最新持仓,调仓,新开仓,已清仓,持仓,组合"
-            />
-          </label>
-          <label class="full-row">
-            雪球 Cookie（xq_a_token 等）
-            <textarea name="xueqiuCookie" rows="3" placeholder="粘贴完整 Cookie"></textarea>
-          </label>
-          <label class="full-row">
-            微博 Cookie（SUB 等）
-            <textarea name="weiboCookie" rows="3" placeholder="粘贴完整 Cookie"></textarea>
-          </label>
-
-          <label class="full-row">
-            说明
-            <input value="Cookie / Qwen Key 仅本地保存，用于自动抓取超级鹿鼎公持仓帖子" readonly />
-          </label>
-
-          <div class="full-row inline-actions">
-            <button class="btn primary" type="submit">保存自动配置</button>
-            <button class="btn" type="button" id="runAutoSyncBtn">立即抓取一次</button>
-            <button class="btn" type="button" id="runBackfillBtn">回溯历史标题帖子</button>
-            <button class="btn" type="button" id="loadCatalogBtn">抓取全部月份目录</button>
-            <button class="btn primary" type="button" id="importSelectedBtn">导入选中月份</button>
-            <button class="btn" type="button" id="recalculateSnapshotsBtn">重算快照字段</button>
-            <a class="btn btn-link" href="/">返回主页看板</a>
+    <main class="page-main">
+      <div class="layui-container page-shell page-shell-admin">
+        <section class="layui-panel hero-panel">
+          <div class="hero-copy">
+            <p class="hero-eyebrow">Auto Sync Console</p>
+            <h1 class="hero-title">自动抓取与月度校正后台</h1>
+            <p class="hero-subtitle">集中管理 Cookie、OCR、月份目录导入、异常复核与月度净值校正，保持前台看板只负责展示结果。</p>
           </div>
-          <p class="inline-status full-row config-status" id="autoSyncText">等待首次自动抓取</p>
-        </form>
-      </section>
-
-      <section class="panel system-status-panel" id="admin-status">
-        <div class="panel-head">
-          <h2>系统状态</h2>
-          <p id="systemStatusNote">载入中...</p>
-        </div>
-        <div id="systemStatusGrid" class="system-status-grid">
-          <article class="system-status-card">
-            <p class="system-status-label">运行状态</p>
-            <h3 id="systemRuntimeStatus" class="system-status-value">-</h3>
-            <p class="system-status-meta">自动抓取任务当前状态</p>
-          </article>
-          <article class="system-status-card">
-            <p class="system-status-label">最近成功</p>
-            <h3 id="systemLastSuccess" class="system-status-value">-</h3>
-            <p class="system-status-meta">最后一次成功导入时间</p>
-          </article>
-          <article class="system-status-card">
-            <p class="system-status-label">最新月份</p>
-            <h3 id="systemLatestMonth" class="system-status-value">-</h3>
-            <p class="system-status-meta">当前最新持仓快照月份</p>
-          </article>
-          <article class="system-status-card">
-            <p class="system-status-label">历史快照</p>
-            <h3 id="systemSnapshotCount" class="system-status-value">-</h3>
-            <p class="system-status-meta">系统内已导入的月份数</p>
-          </article>
-          <article class="system-status-card">
-            <p class="system-status-label">累计交易</p>
-            <h3 id="systemImportedTrades" class="system-status-value">-</h3>
-            <p class="system-status-meta">累计写入的自动导入交易</p>
-          </article>
-          <article class="system-status-card">
-            <p class="system-status-label">OCR 状态</p>
-            <h3 id="systemOcrStatus" class="system-status-value">-</h3>
-            <p class="system-status-meta">识别引擎与图片上限配置</p>
-          </article>
-          <article class="system-status-card">
-            <p class="system-status-label">凭证状态</p>
-            <h3 id="systemCredentialStatus" class="system-status-value">-</h3>
-            <p class="system-status-meta">雪球 / 微博 / Qwen 凭证配置</p>
-          </article>
-          <article class="system-status-card system-status-card-wide">
-            <p class="system-status-label">最近错误</p>
-            <p id="systemLastError" class="system-status-copy">-</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel admin-quick-nav-panel">
-        <div class="panel-head">
-          <h2>快速跳转</h2>
-          <p>长页面可直接定位到目标模块</p>
-        </div>
-        <nav class="admin-quick-nav" aria-label="后台模块导航">
-          <a class="quick-nav-link" href="#admin-config">抓取配置</a>
-          <a class="quick-nav-link" href="#admin-status">系统状态</a>
-          <a class="quick-nav-link" href="#admin-latest">最新持仓</a>
-          <a class="quick-nav-link" href="#admin-logs">同步日志</a>
-          <a class="quick-nav-link" href="#admin-catalog">月份目录</a>
-          <a class="quick-nav-link" href="#admin-history">历史快照</a>
-          <a class="quick-nav-link" href="#admin-anomalies">异常检查</a>
-          <a class="quick-nav-link" href="#admin-metrics">月度指标</a>
-        </nav>
-      </section>
-
-      <section class="grid two-col result-grid">
-        <section class="panel" id="admin-latest">
-          <div class="panel-head">
-            <h2>最新抓取持仓</h2>
-            <p id="latestSnapshotMeta">暂无抓取结果</p>
-          </div>
-          <div class="table-wrap short">
-            <table>
-              <thead>
-                <tr>
-                  <th>证券代码</th>
-                  <th>证券名称</th>
-                  <th>名称来源</th>
-                  <th>可用/持仓</th>
-                  <th>成本价</th>
-                  <th>最新价</th>
-                  <th>市值</th>
-                  <th>浮动盈亏</th>
-                  <th>盈亏比例(%)</th>
-                </tr>
-              </thead>
-              <tbody id="masterRowsBody"></tbody>
-            </table>
+          <div class="hero-side">
+            <div class="hero-pill-list">
+              <span class="hero-pill">雪球目录抓取</span>
+              <span class="hero-pill">Qwen / 本地 OCR</span>
+              <span class="hero-pill">异常行校验</span>
+              <span class="hero-pill">月度指标修正</span>
+            </div>
+            <nav class="hero-nav layui-breadcrumb" aria-label="路径导航">
+              <a href="/">主页</a>
+              <span lay-separator="/">后台</span>
+              <a href="#admin-config">自动配置</a>
+            </nav>
           </div>
         </section>
 
-        <section class="panel" id="admin-logs">
-          <div class="panel-head">
-            <h2>同步日志</h2>
-            <p>最近 20 条</p>
-          </div>
-          <div class="table-wrap short">
-            <table>
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>级别</th>
-                  <th>信息</th>
-                </tr>
-              </thead>
-              <tbody id="syncLogsBody"></tbody>
-            </table>
+        <div class="admin-layout-grid admin-layout-top">
+          <section class="layui-panel section-panel config-panel" id="admin-config">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Configuration</p>
+                <h2 class="section-title">自动抓取配置</h2>
+                <p class="section-meta">超级鹿鼎公</p>
+              </div>
+            </header>
+
+            <form id="autoConfigForm" class="config-form">
+              <div class="config-form-grid">
+                <label class="config-field">
+                  <span class="field-label">自动同步</span>
+                  <select name="enabled" class="form-control">
+                    <option value="true">开启</option>
+                    <option value="false">关闭</option>
+                  </select>
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">同步间隔（分钟）</span>
+                  <input class="form-control" name="intervalMinutes" type="number" min="15" max="1440" value="180" />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">单源抓取条数</span>
+                  <input class="form-control" name="maxPostsPerSource" type="number" min="1" max="20" value="6" />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">OCR 识别</span>
+                  <select name="ocrEnabled" class="form-control">
+                    <option value="true">开启</option>
+                    <option value="false">关闭</option>
+                  </select>
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">OCR 引擎</span>
+                  <select name="ocrProvider" class="form-control">
+                    <option value="auto">自动（有 Qwen Key 时优先）</option>
+                    <option value="qwen">Qwen OCR 优先</option>
+                    <option value="local">本地 Tesseract</option>
+                  </select>
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">每条帖子最多识别图片数</span>
+                  <input class="form-control" name="ocrMaxImagesPerPost" type="number" min="1" max="5" value="1" />
+                </label>
+
+                <label class="config-field full-row">
+                  <span class="field-label">Qwen OCR API Key</span>
+                  <input
+                    class="form-control"
+                    name="qwenApiKey"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="留空则保持已保存值，或读取环境变量 DASHSCOPE_API_KEY"
+                  />
+                </label>
+
+                <label class="config-field full-row">
+                  <span class="field-label">置顶帖子链接（每行一条，优先抓取）</span>
+                  <textarea class="form-control form-textarea" name="pinnedPostUrls" rows="3" placeholder="https://xueqiu.com/8790885129/381996320">https://xueqiu.com/8790885129/381996320</textarea>
+                </label>
+
+                <label class="config-field full-row">
+                  <span class="field-label">雪球标题匹配正则（历史回溯过滤）</span>
+                  <input
+                    class="form-control"
+                    name="xueqiuTitleRegex"
+                    placeholder="游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图"
+                    value="游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图"
+                  />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">回溯最大页数</span>
+                  <input class="form-control" name="backfillMaxPages" type="number" min="1" max="120" value="36" />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">回溯每页条数</span>
+                  <input class="form-control" name="backfillPageSize" type="number" min="5" max="50" value="20" />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">关键词（逗号分隔）</span>
+                  <input
+                    class="form-control"
+                    name="keywords"
+                    placeholder="最新持仓, 调仓, 新开仓, 已清仓"
+                    value="最新持仓,调仓,新开仓,已清仓,持仓,组合"
+                  />
+                </label>
+
+                <label class="config-field full-row">
+                  <span class="field-label">雪球 Cookie（xq_a_token 等）</span>
+                  <textarea class="form-control form-textarea" name="xueqiuCookie" rows="3" placeholder="粘贴完整 Cookie"></textarea>
+                </label>
+
+                <label class="config-field full-row">
+                  <span class="field-label">微博 Cookie（SUB 等）</span>
+                  <textarea class="form-control form-textarea" name="weiboCookie" rows="3" placeholder="粘贴完整 Cookie"></textarea>
+                </label>
+
+                <label class="config-field full-row">
+                  <span class="field-label">说明</span>
+                  <input class="form-control" value="Cookie / Qwen Key 仅本地保存，用于自动抓取超级鹿鼎公持仓帖子" readonly />
+                </label>
+              </div>
+
+              <div class="action-toolbar">
+                <div class="action-cluster">
+                  <span class="action-cluster-label">保存与同步</span>
+                  <div class="action-row">
+                    <button class="layui-btn layui-btn-normal" type="submit">保存自动配置</button>
+                    <button class="layui-btn layui-btn-primary" type="button" id="runAutoSyncBtn">立即抓取一次</button>
+                  </div>
+                </div>
+
+                <div class="action-cluster">
+                  <span class="action-cluster-label">目录与导入</span>
+                  <div class="action-row">
+                    <button class="layui-btn layui-btn-primary" type="button" id="loadCatalogBtn">抓取月份目录</button>
+                    <button class="layui-btn layui-btn-normal" type="button" id="importSelectedBtn">导入选中月份</button>
+                    <button class="layui-btn layui-btn-primary" type="button" id="runBackfillBtn">回溯历史帖子</button>
+                  </div>
+                </div>
+
+                <div class="action-cluster action-cluster-secondary">
+                  <span class="action-cluster-label">维护</span>
+                  <div class="action-row">
+                    <button class="layui-btn layui-btn-primary" type="button" id="recalculateSnapshotsBtn">重算快照字段</button>
+                    <a class="layui-btn layui-btn-primary" href="/">返回主页看板</a>
+                  </div>
+                </div>
+              </div>
+              <div class="helper-note">
+                <span class="helper-note-label">推荐流程</span>
+                <p class="helper-note-copy">保存配置后，先抓取全部月份目录，再导入选中月份，最后查看异常检查和月度指标校正。</p>
+              </div>
+              <p class="inline-status config-status" id="autoSyncText">等待首次自动抓取</p>
+            </form>
+          </section>
+
+          <section class="layui-panel section-panel system-panel" id="admin-status">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Runtime</p>
+                <h2 class="section-title">系统状态</h2>
+                <p class="section-meta" id="systemStatusNote">载入中...</p>
+              </div>
+            </header>
+            <div id="systemStatusGrid" class="system-status-grid">
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">运行状态</p>
+                  <h3 id="systemRuntimeStatus" class="system-status-value">-</h3>
+                  <p class="system-status-meta">自动抓取任务当前状态</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">最近成功</p>
+                  <h3 id="systemLastSuccess" class="system-status-value">-</h3>
+                  <p class="system-status-meta">最后一次成功导入时间</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">最新月份</p>
+                  <h3 id="systemLatestMonth" class="system-status-value">-</h3>
+                  <p class="system-status-meta">当前最新持仓快照月份</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">历史快照</p>
+                  <h3 id="systemSnapshotCount" class="system-status-value">-</h3>
+                  <p class="system-status-meta">系统内已导入的月份数</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">累计交易</p>
+                  <h3 id="systemImportedTrades" class="system-status-value">-</h3>
+                  <p class="system-status-meta">累计写入的自动导入交易</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">OCR 状态</p>
+                  <h3 id="systemOcrStatus" class="system-status-value">-</h3>
+                  <p class="system-status-meta">识别引擎与图片上限配置</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card system-status-card-wide system-status-card-credentials">
+                <div class="layui-card-body">
+                  <p class="system-status-label">凭证状态</p>
+                  <h3 id="systemCredentialStatus" class="system-status-value">-</h3>
+                  <p class="system-status-meta">雪球 / 微博 / Qwen 凭证配置</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card system-status-card-wide system-status-card-log">
+                <div class="layui-card-body">
+                  <p class="system-status-label">最近错误</p>
+                  <p id="systemLastError" class="system-status-copy">-</p>
+                </div>
+              </article>
+            </div>
+          </section>
+        </div>
+
+        <section class="layui-panel section-panel quick-nav-panel">
+          <header class="section-head compact-head">
+            <div>
+              <p class="section-eyebrow">Quick Jump</p>
+              <h2 class="section-title">快速跳转</h2>
+            </div>
+          </header>
+          <nav class="admin-quick-nav" aria-label="后台模块导航">
+            <a class="quick-nav-link" href="#admin-config">抓取配置</a>
+            <a class="quick-nav-link" href="#admin-status">系统状态</a>
+            <a class="quick-nav-link" href="#admin-latest">最新持仓</a>
+            <a class="quick-nav-link" href="#admin-logs">同步日志</a>
+            <a class="quick-nav-link" href="#admin-catalog">月份目录</a>
+            <a class="quick-nav-link" href="#admin-history">历史快照</a>
+            <a class="quick-nav-link" href="#admin-anomalies">异常检查</a>
+            <a class="quick-nav-link" href="#admin-metrics">月度指标</a>
+          </nav>
+        </section>
+
+        <section class="layui-panel section-panel context-panel" aria-label="当前工作上下文">
+          <header class="section-head compact-head">
+            <div>
+              <p class="section-eyebrow">Current Context</p>
+              <h2 class="section-title">当前工作上下文</h2>
+            </div>
+          </header>
+          <div class="work-context-grid">
+            <article class="work-context-card">
+              <span class="work-context-label">当前查看</span>
+              <strong id="contextCurrentMonth" class="work-context-value">-</strong>
+              <span class="work-context-meta">前台快照月份</span>
+            </article>
+            <article class="work-context-card">
+              <span class="work-context-label">已选目录</span>
+              <strong id="contextCatalogSelected" class="work-context-value">-</strong>
+              <span class="work-context-meta">等待导入的月份帖子</span>
+            </article>
+            <article class="work-context-card">
+              <span class="work-context-label">待保存</span>
+              <strong id="contextMetricsDirty" class="work-context-value">-</strong>
+              <span class="work-context-meta">月度指标草稿</span>
+            </article>
+            <article class="work-context-card">
+              <span class="work-context-label">待复核</span>
+              <strong id="contextAnomalyCount" class="work-context-value">-</strong>
+              <span class="work-context-meta">异常行与快照</span>
+            </article>
           </div>
         </section>
-      </section>
 
-      <section class="grid two-col result-grid">
-        <section class="panel" id="admin-catalog">
-          <div class="panel-head">
-            <h2>雪球月度帖子目录（可选择导入）</h2>
-            <p id="catalogMeta">未加载</p>
-          </div>
-          <div class="table-wrap short">
-            <table>
+        <div class="admin-layout-grid">
+          <section class="layui-panel section-panel" id="admin-latest">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Latest Snapshot</p>
+                <h2 class="section-title">最新抓取持仓</h2>
+                <p class="section-meta" id="latestSnapshotMeta">暂无抓取结果</p>
+              </div>
+            </header>
+            <div class="table-shell short">
+              <table class="layui-table admin-table admin-table-latest">
+                <thead>
+                  <tr>
+                    <th>证券代码</th>
+                    <th>证券名称</th>
+                    <th>名称来源</th>
+                    <th>可用/持仓</th>
+                    <th>成本价</th>
+                    <th>最新价</th>
+                    <th>市值</th>
+                    <th>浮动盈亏</th>
+                    <th>盈亏比例(%)</th>
+                  </tr>
+                </thead>
+                <tbody id="masterRowsBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="layui-panel section-panel" id="admin-logs">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Logs</p>
+                <h2 class="section-title">同步日志</h2>
+                <p class="section-meta">最近 20 条</p>
+              </div>
+            </header>
+            <div class="table-shell short">
+              <table class="layui-table admin-table admin-table-logs">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>级别</th>
+                    <th>信息</th>
+                  </tr>
+                </thead>
+                <tbody id="syncLogsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <div class="admin-layout-grid">
+          <section class="layui-panel section-panel" id="admin-catalog">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Catalog</p>
+                <h2 class="section-title">雪球月度帖子目录（可选择导入）</h2>
+                <p class="section-meta" id="catalogMeta">未加载</p>
+              </div>
+            </header>
+            <div class="table-shell short">
+              <table class="layui-table admin-table admin-table-catalog">
+                <thead>
+                  <tr>
+                    <th>
+                      <label class="catalog-check-all">
+                        <input id="catalogCheckAll" type="checkbox" />
+                        <span>全选</span>
+                      </label>
+                    </th>
+                    <th>月份</th>
+                    <th>标题</th>
+                    <th>发布时间</th>
+                    <th>状态</th>
+                    <th>原帖</th>
+                  </tr>
+                </thead>
+                <tbody id="catalogBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="layui-panel section-panel" id="admin-history">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">History</p>
+                <h2 class="section-title">已导入历史快照（可切换查看）</h2>
+                <p class="section-meta" id="snapshotHistoryMeta">载入中...</p>
+              </div>
+              <div class="head-actions">
+                <button class="layui-btn layui-btn-primary" type="button" id="viewLatestBtn">查看最新快照</button>
+              </div>
+            </header>
+            <div class="table-shell short">
+              <table class="layui-table admin-table admin-table-history">
+                <thead>
+                  <tr>
+                    <th>月份</th>
+                    <th>标题</th>
+                    <th>发布时间</th>
+                    <th>行数</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="snapshotHistoryBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="layui-panel section-panel" id="admin-anomalies">
+          <header class="section-head">
+            <div>
+              <p class="section-eyebrow">Anomalies</p>
+              <h2 class="section-title">异常快照检查</h2>
+              <p class="section-meta" id="anomalyMeta">载入中...</p>
+            </div>
+          </header>
+          <div class="table-shell short">
+            <table class="layui-table admin-table admin-table-anomalies">
               <thead>
                 <tr>
-                  <th>
-                    <label class="catalog-check-all">
-                      <input id="catalogCheckAll" type="checkbox" />
-                      <span>全选</span>
-                    </label>
-                  </th>
                   <th>月份</th>
-                  <th>标题</th>
-                  <th>发布时间</th>
+                  <th>证券</th>
+                  <th>自动修正</th>
+                  <th>仍需复核</th>
+                  <th>当前值</th>
+                </tr>
+              </thead>
+              <tbody id="anomalyRowsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="layui-panel section-panel" id="admin-metrics">
+          <header class="section-head">
+            <div>
+              <p class="section-eyebrow">Monthly Metrics</p>
+              <h2 class="section-title">月度指标校正</h2>
+              <p class="section-meta" id="monthlyMetricMeta">载入中...</p>
+            </div>
+          </header>
+          <p class="table-note">使用方式：先点某一行“编辑”后再输入人工值；可逐行保存，也可在上方统一点“保存全部已修改”。想恢复自动抓取结果，点该行“恢复自动”。输入框下方会显示当前自动值。</p>
+          <div class="metrics-toolbar">
+            <div class="metrics-toolbar-main">
+              <p class="metrics-toolbar-text" id="monthlyMetricToolbarText">未开始编辑</p>
+              <div class="metrics-filter" id="monthlyMetricFilters">
+                <button class="filter-chip is-active" type="button" data-metric-filter="all">全部</button>
+                <button class="filter-chip" type="button" data-metric-filter="dirty">待保存</button>
+                <button class="filter-chip" type="button" data-metric-filter="manual">人工校正</button>
+              </div>
+            </div>
+            <div class="metrics-toolbar-actions">
+              <button class="layui-btn layui-btn-normal" type="button" id="saveAllMetricsBtn">保存全部已修改</button>
+              <button class="layui-btn layui-btn-primary" type="button" id="discardAllMetricsBtn">放弃全部编辑</button>
+            </div>
+          </div>
+          <div class="table-shell short metrics-table">
+            <table class="layui-table admin-table admin-table-metrics">
+              <thead>
+                <tr>
+                  <th>月份</th>
+                  <th>标题 / 来源</th>
+                  <th>累计净值(万)</th>
+                  <th>净值指数</th>
+                  <th>年初净值指数</th>
                   <th>状态</th>
-                  <th>原帖</th>
-                </tr>
-              </thead>
-              <tbody id="catalogBody"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="panel" id="admin-history">
-          <div class="panel-head">
-            <h2>已导入历史快照（可切换查看）</h2>
-            <p id="snapshotHistoryMeta">载入中...</p>
-          </div>
-          <div class="inline-actions top-gap">
-            <button class="btn" type="button" id="viewLatestBtn">查看最新快照</button>
-          </div>
-          <div class="table-wrap short">
-            <table>
-              <thead>
-                <tr>
-                  <th>月份</th>
-                  <th>标题</th>
-                  <th>发布时间</th>
-                  <th>行数</th>
                   <th>操作</th>
                 </tr>
               </thead>
-              <tbody id="snapshotHistoryBody"></tbody>
+              <tbody id="monthlyMetricBody"></tbody>
             </table>
           </div>
         </section>
-      </section>
-
-      <section class="panel" id="admin-anomalies">
-        <div class="panel-head">
-          <h2>异常快照检查</h2>
-          <p id="anomalyMeta">载入中...</p>
-        </div>
-        <div class="table-wrap short">
-          <table>
-            <thead>
-              <tr>
-                <th>月份</th>
-                <th>证券</th>
-                <th>自动修正</th>
-                <th>仍需复核</th>
-                <th>当前值</th>
-              </tr>
-            </thead>
-          <tbody id="anomalyRowsBody"></tbody>
-        </table>
       </div>
-      </section>
-
-      <section class="panel" id="admin-metrics">
-        <div class="panel-head">
-          <h2>月度指标校正</h2>
-          <p id="monthlyMetricMeta">载入中...</p>
-        </div>
-        <p class="table-note">使用方式：先点某一行“编辑”后再输入人工值；可逐行保存，也可在上方统一点“保存全部已修改”。想恢复自动抓取结果，点该行“恢复自动”。输入框下方会显示当前自动值。</p>
-        <div class="metrics-toolbar">
-          <div class="metrics-toolbar-main">
-            <p class="metrics-toolbar-text" id="monthlyMetricToolbarText">未开始编辑</p>
-            <div class="metrics-filter" id="monthlyMetricFilters">
-              <button class="filter-chip is-active" type="button" data-metric-filter="all">全部</button>
-              <button class="filter-chip" type="button" data-metric-filter="dirty">待保存</button>
-              <button class="filter-chip" type="button" data-metric-filter="manual">人工校正</button>
-            </div>
-          </div>
-          <div class="metrics-toolbar-actions">
-            <button class="btn primary" type="button" id="saveAllMetricsBtn">保存全部已修改</button>
-            <button class="btn" type="button" id="discardAllMetricsBtn">放弃全部编辑</button>
-          </div>
-        </div>
-        <div class="table-wrap short metrics-table">
-          <table>
-            <thead>
-              <tr>
-                <th>月份</th>
-                <th>标题 / 来源</th>
-                <th>累计净值(万)</th>
-                <th>净值指数</th>
-                <th>年初净值指数</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="monthlyMetricBody"></tbody>
-          </table>
-        </div>
-      </section>
     </main>
 
     <footer class="site-footer site-footer-admin" data-site-footer>
@@ -358,7 +496,7 @@
         <div class="site-footer-meta">
           <span class="site-footer-item" data-footer-author data-fallback="Kale">Kale</span>
           <span class="site-footer-sep">·</span>
-          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.14">v0.1.14</span>
+          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.15">v0.1.15</span>
           <span class="site-footer-sep">·</span>
           <a
             class="site-footer-link"
@@ -370,12 +508,7 @@
             aria-label="GitHub：icekale/stock-lu-tracker"
             title="GitHub：icekale/stock-lu-tracker"
           >
-            <svg
-              class="site-footer-github-icon"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-              focusable="false"
-            >
+            <svg class="site-footer-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
               <path
                 fill="currentColor"
                 d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.67 7.67 0 0 1 8 4.98c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
@@ -389,6 +522,7 @@
 
     <a class="page-top-button" href="#pageTop" aria-label="回到顶部" title="回到顶部">↑</a>
 
+    <script src="/vendor/layui/layui.js"></script>
     <script src="/site-footer.js"></script>
     <script src="/auto-sync.js"></script>
   </body>

@@ -37,6 +37,10 @@ const els = {
   systemOcrStatus: document.getElementById("systemOcrStatus"),
   systemCredentialStatus: document.getElementById("systemCredentialStatus"),
   systemLastError: document.getElementById("systemLastError"),
+  contextCurrentMonth: document.getElementById("contextCurrentMonth"),
+  contextCatalogSelected: document.getElementById("contextCatalogSelected"),
+  contextMetricsDirty: document.getElementById("contextMetricsDirty"),
+  contextAnomalyCount: document.getElementById("contextAnomalyCount"),
   latestSnapshotMeta: document.getElementById("latestSnapshotMeta"),
   masterRowsBody: document.getElementById("masterRowsBody"),
   syncLogsBody: document.getElementById("syncLogsBody"),
@@ -90,6 +94,24 @@ function formatDateTime(value) {
 
   return date.toLocaleString("zh-CN", {
     year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatCardDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return date.toLocaleString("zh-CN", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -314,6 +336,7 @@ function updateCatalogMeta() {
   const selectable = getCatalogCheckboxes().filter((input) => !input.disabled);
   const selectedCount = selectable.filter((input) => input.checked).length;
   els.catalogMeta.textContent = `共 ${state.catalogPosts.length} 条，可选 ${selectable.length} 条，已选 ${selectedCount} 条`;
+  renderWorkContext();
 }
 
 function getSnapshotHistoryList() {
@@ -518,7 +541,43 @@ function syncMonthlyMetricToolbarState() {
     }
   }
 
+  renderWorkContext();
   return dirtyIds;
+}
+
+function getSelectedCatalogCount() {
+  return getCatalogCheckboxes().filter((input) => !input.disabled && input.checked).length;
+}
+
+function renderWorkContext() {
+  const selectedSummary =
+    state.selectedSnapshotId && Array.isArray(state.snapshots)
+      ? state.snapshots.find((item) => String(item?.id || "").trim() === String(state.selectedSnapshotId || "").trim()) || null
+      : null;
+  const currentSnapshot = getViewingSnapshot() || selectedSummary || state.latestSnapshot || state.snapshots[0] || null;
+  const currentMonth = currentSnapshot ? monthLabelFromTitleOrDate(currentSnapshot.title, currentSnapshot.postedAt) : "-";
+  const selectedCatalogCount = getSelectedCatalogCount();
+  const dirtyCount = getDirtyMonthlyMetricIds().length;
+  const anomalySnapshots = Array.isArray(state.anomalyReport?.snapshots)
+    ? state.anomalyReport.snapshots.filter((snapshot) => (snapshot.rows || []).some((row) => (row.diagnostics?.issues || []).length > 0))
+    : [];
+  const anomalySummary = state.anomalyReport?.summary || {};
+  const issueRowCount = Number(anomalySummary.issueRowCount) || 0;
+  const issueSnapshotCount = anomalySnapshots.length;
+
+  if (els.contextCurrentMonth) {
+    els.contextCurrentMonth.textContent = currentMonth;
+  }
+  if (els.contextCatalogSelected) {
+    els.contextCatalogSelected.textContent = `${selectedCatalogCount} 条`;
+  }
+  if (els.contextMetricsDirty) {
+    els.contextMetricsDirty.textContent = `${dirtyCount} 条`;
+  }
+  if (els.contextAnomalyCount) {
+    els.contextAnomalyCount.textContent =
+      issueRowCount > 0 ? `${issueRowCount} 行 / ${issueSnapshotCount} 月` : "0 行";
+  }
 }
 
 function getVisibleMonthlyUpdates(list, dirtyIdSet) {
@@ -736,9 +795,7 @@ function renderSystemStatus() {
     runtimeTone = "tone-ok";
   }
 
-  const ocrText = config.ocrEnabled
-    ? `${formatOcrProviderLabel(config.ocrProvider)} / ${Number(config.ocrMaxImagesPerPost) || 1} 张`
-    : "已关闭";
+  const ocrText = config.ocrEnabled ? formatOcrProviderLabel(config.ocrProvider) : "已关闭";
   const credentialText = [
     `雪球 ${config.hasXueqiuCookie ? "已配" : "未配"}`,
     `微博 ${config.hasWeiboCookie ? "已配" : "未配"}`,
@@ -759,7 +816,7 @@ function renderSystemStatus() {
     setStatusCardTone(els.systemRuntimeStatus, runtimeTone);
   }
   if (els.systemLastSuccess) {
-    els.systemLastSuccess.textContent = formatDateTime(runtime.lastSuccessAt);
+    els.systemLastSuccess.textContent = formatCardDateTime(runtime.lastSuccessAt);
     setStatusCardTone(els.systemLastSuccess, runtime.lastSuccessAt ? "tone-ok" : "tone-warn");
   }
   if (els.systemLatestMonth) {
@@ -918,12 +975,16 @@ function renderLogs() {
     .slice(0, 20)
     .map((log) => {
       const level = String(log.level || "info").toUpperCase();
-      const levelClass = level === "ERROR" ? "neg" : level === "WARN" ? "" : "pos";
+      const levelTagClass = level === "ERROR" ? "tag-error" : level === "WARN" ? "tag-warn" : "tag-idle";
       return `
         <tr>
-          <td>${formatDateTime(log.createdAt)}</td>
-          <td class="mono ${levelClass}">${escapeHtml(level)}</td>
-          <td>${escapeHtml(log.message || "-")}</td>
+          <td class="mono">${formatDateTime(log.createdAt)}</td>
+          <td><span class="tag ${levelTagClass}">${escapeHtml(level)}</span></td>
+          <td>
+            <div class="cell-stack">
+              <strong class="cell-title" title="${escapeHtml(log.message || "-")}">${escapeHtml(log.message || "-")}</strong>
+            </div>
+          </td>
         </tr>
       `;
     })
@@ -957,19 +1018,24 @@ function renderCatalog() {
       const hasPostId = Boolean(postId);
       const imported = hasPostId && (Boolean(item.imported) || importedPostIds.has(postId));
       const statusText = !hasPostId ? "缺少帖子ID" : imported ? "已导入" : item.processed ? "已处理" : "未导入";
-      const statusClass = imported ? "pos" : !hasPostId ? "neg" : "";
+      const statusTagClass = imported ? "tag-fix" : !hasPostId ? "tag-error" : item.processed ? "tag-warn" : "tag-idle";
       const monthLabel = monthLabelFromTitleOrDate(item.title, item.postedAt);
       const safeTitle = escapeHtml(item.title || "(无标题)");
       const checkboxAttrs = hasPostId ? `data-catalog-id="${escapeHtml(postId)}"` : "disabled";
-      const safeLink = buildExternalLinkHtml(item.link);
+      const safeLink = buildExternalLinkHtml(item.link, "打开原帖");
 
       return `
         <tr>
           <td><input type="checkbox" ${checkboxAttrs} /></td>
           <td class="mono">${escapeHtml(monthLabel)}</td>
-          <td>${safeTitle}</td>
-          <td>${formatDateTime(item.postedAt)}</td>
-          <td class="${statusClass}">${escapeHtml(statusText)}</td>
+          <td>
+            <div class="cell-stack">
+              <strong class="cell-title" title="${safeTitle}">${safeTitle}</strong>
+              <span class="cell-note" title="${hasPostId ? escapeHtml(postId) : "帖子ID 缺失"}">${hasPostId ? escapeHtml(postId) : "帖子ID 缺失"}</span>
+            </div>
+          </td>
+          <td class="mono">${formatDateTime(item.postedAt)}</td>
+          <td><span class="tag ${statusTagClass}">${escapeHtml(statusText)}</span></td>
           <td>${safeLink}</td>
         </tr>
       `;
@@ -1000,13 +1066,21 @@ function renderSnapshotHistory() {
       const anomalyCount = getSnapshotAnomalyCount(item.postId);
       const safeTitle = escapeHtml(item.title || "-");
       const safeId = escapeHtml(item.id);
+      const actionButtonClass = active ? "inline-btn inline-btn-primary" : "inline-btn";
       return `
         <tr class="${active ? "row-selected" : ""}">
           <td class="mono">${escapeHtml(monthLabel)}</td>
-          <td>${safeTitle}${anomalyCount > 0 ? ` <span class="tag tag-warn">复核 ${escapeHtml(anomalyCount)}</span>` : ""}</td>
-          <td>${formatDateTime(item.postedAt)}</td>
+          <td>
+            <div class="cell-stack">
+              <strong class="cell-title" title="${safeTitle}">${safeTitle}</strong>
+              <span class="cell-note">
+                ${anomalyCount > 0 ? `<span class="tag tag-warn">复核 ${escapeHtml(anomalyCount)}</span>` : `<span class="tag tag-idle">正常</span>`}
+              </span>
+            </div>
+          </td>
+          <td class="mono">${formatDateTime(item.postedAt)}</td>
           <td class="mono">${escapeHtml(getSnapshotRowCount(item))}</td>
-          <td><button class="inline-btn" data-view-snapshot="${safeId}">查看</button></td>
+          <td><button class="${actionButtonClass}" data-view-snapshot="${safeId}">${active ? "当前查看" : "查看"}</button></td>
         </tr>
       `;
     })
@@ -1059,8 +1133,8 @@ function renderAnomalies() {
             <td class="mono">${monthLabel}</td>
             <td>
               <div class="cell-stack">
-                <strong>${security}</strong>
-                <span class="cell-note">${title}</span>
+                <strong class="cell-title" title="${security}">${security}</strong>
+                <span class="cell-note" title="${title}">${title}</span>
               </div>
             </td>
             <td>${fixText}</td>
@@ -1124,6 +1198,11 @@ function renderMonthlyMetrics() {
       if (isDirty) {
         modeTag = `<span class="tag tag-edit">待保存</span>`;
       }
+      const statusCopy = isDirty
+        ? "本行存在未保存修改"
+        : manualMetrics
+          ? "当前以前台人工值为准"
+          : "当前沿用自动抓取结果";
       const title = escapeHtml(item.title || "-");
       const sourceLabel = escapeHtml(formatSourceLabel(item.source));
       const link = item.link
@@ -1145,16 +1224,17 @@ function renderMonthlyMetrics() {
           `;
 
       return `
-        <tr class="${isDirty ? "row-dirty" : ""}" data-monthly-update-id="${escapeHtml(item.id)}">
+        <tr class="${[isDirty ? "row-dirty" : "", isEditing ? "row-editing" : ""].filter(Boolean).join(" ")}" data-monthly-update-id="${escapeHtml(item.id)}">
           <td class="mono">${escapeHtml(item.month || monthLabelByDate(item.postedAt))}</td>
           <td>
             <div class="cell-stack">
-              <strong>${title}</strong>
-              <span class="cell-note">${sourceLabel} | ${formatDateTime(item.postedAt)} ${link}</span>
+              <strong class="cell-title" title="${title}">${title}</strong>
+              <span class="cell-note" title="${sourceLabel} | ${formatDateTime(item.postedAt)}">${sourceLabel} | ${formatDateTime(item.postedAt)} ${link}</span>
             </div>
           </td>
           <td class="${isEditing ? "cell-editing" : ""}">
-            <div class="metric-editor">
+            <div class="metric-editor ${isEditing ? "is-editing" : ""}">
+              <span class="metric-editor-label">人工值</span>
               <input
                 class="metric-input mono"
                 data-metric-field="netValueWan"
@@ -1166,11 +1246,15 @@ function renderMonthlyMetrics() {
                 placeholder="输入人工值"
                 ${isEditing ? "" : "disabled"}
               />
-              <span class="metric-hint">自动值：${escapeHtml(formatMetricHint(autoValues.netValueWan, 2))}</span>
+              <span class="metric-hint">
+                <span class="metric-hint-label">自动值</span>
+                <strong class="metric-hint-value">${escapeHtml(formatMetricHint(autoValues.netValueWan, 2))}</strong>
+              </span>
             </div>
           </td>
           <td class="${isEditing ? "cell-editing" : ""}">
-            <div class="metric-editor">
+            <div class="metric-editor ${isEditing ? "is-editing" : ""}">
+              <span class="metric-editor-label">人工值</span>
               <input
                 class="metric-input mono"
                 data-metric-field="netIndex"
@@ -1182,11 +1266,15 @@ function renderMonthlyMetrics() {
                 placeholder="输入人工值"
                 ${isEditing ? "" : "disabled"}
               />
-              <span class="metric-hint">自动值：${escapeHtml(formatMetricHint(autoValues.netIndex, 4))}</span>
+              <span class="metric-hint">
+                <span class="metric-hint-label">自动值</span>
+                <strong class="metric-hint-value">${escapeHtml(formatMetricHint(autoValues.netIndex, 4))}</strong>
+              </span>
             </div>
           </td>
           <td class="${isEditing ? "cell-editing" : ""}">
-            <div class="metric-editor">
+            <div class="metric-editor ${isEditing ? "is-editing" : ""}">
+              <span class="metric-editor-label">人工值</span>
               <input
                 class="metric-input mono"
                 data-metric-field="yearStartNetIndex"
@@ -1198,12 +1286,20 @@ function renderMonthlyMetrics() {
                 placeholder="输入人工值"
                 ${isEditing ? "" : "disabled"}
               />
-              <span class="metric-hint">自动值：${escapeHtml(formatMetricHint(autoValues.yearStartNetIndex, 4))}</span>
+              <span class="metric-hint">
+                <span class="metric-hint-label">自动值</span>
+                <strong class="metric-hint-value">${escapeHtml(formatMetricHint(autoValues.yearStartNetIndex, 4))}</strong>
+              </span>
             </div>
           </td>
-          <td>${modeTag}</td>
           <td>
-            <div class="metric-actions">
+            <div class="metric-status-cell">
+              ${modeTag}
+              <span class="metric-status-copy">${escapeHtml(statusCopy)}</span>
+            </div>
+          </td>
+          <td>
+            <div class="metric-actions ${isEditing ? "is-editing" : ""}">
               ${actionButtons}
             </div>
           </td>
@@ -1218,6 +1314,7 @@ function renderMonthlyMetrics() {
 function renderAll() {
   renderForm();
   renderSystemStatus();
+  renderWorkContext();
   renderSnapshot();
   renderLogs();
   renderCatalog();

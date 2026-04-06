@@ -3,7 +3,8 @@ const state = {
   selectedSnapshotId: null,
   currentTab: "adjust",
   monthlyChart: null,
-  detailExpandedId: null
+  detailExpandedId: null,
+  monthNavFeedbackSnapshotId: null
 };
 
 const els = {
@@ -35,7 +36,11 @@ const els = {
   detailListMeta: document.getElementById("detailListMeta"),
   detailSnapshotList: document.getElementById("detailSnapshotList"),
   monthlyNetworthChart: document.getElementById("monthlyNetworthChart"),
-  monthlyChartEmpty: document.getElementById("monthlyChartEmpty")
+  monthlyChartEmpty: document.getElementById("monthlyChartEmpty"),
+  chartSeriesCount: document.getElementById("chartSeriesCount"),
+  chartLatestMonth: document.getElementById("chartLatestMonth"),
+  chartLatestValue: document.getElementById("chartLatestValue"),
+  chartSeriesHint: document.getElementById("chartSeriesHint")
 };
 
 async function request(url, options = {}) {
@@ -243,11 +248,12 @@ function renderGroupedRows(rows, columnCount, renderRow) {
     .map((group) => {
       const label = escapeHtml(group.label);
       const count = escapeHtml(`${group.rows.length}只`);
+      const groupKey = escapeHtml(group.key);
       return `
-        <tr class="market-group-row">
+        <tr class="market-group-row" data-market-group="${groupKey}">
           <td colspan="${columnCount}">
             <div class="market-group-cell">
-              <span class="market-group-label">${label}</span>
+              <span class="market-group-label" data-market-group-label="${groupKey}">${label}</span>
               <span class="market-group-count">${count}</span>
             </div>
           </td>
@@ -350,6 +356,157 @@ function currentSnapshot() {
     return state.snapshots[0] || null;
   }
   return state.snapshots.find((item) => item.id === state.selectedSnapshotId) || state.snapshots[0] || null;
+}
+
+function currentSnapshotIndex() {
+  const current = currentSnapshot();
+  if (!current) {
+    return -1;
+  }
+
+  return state.snapshots.findIndex((item) => item.id === current.id);
+}
+
+function olderSnapshot() {
+  const index = currentSnapshotIndex();
+  if (index < 0 || index >= state.snapshots.length - 1) {
+    return null;
+  }
+
+  return state.snapshots[index + 1] || null;
+}
+
+function newerSnapshot() {
+  const index = currentSnapshotIndex();
+  if (index <= 0) {
+    return null;
+  }
+
+  return state.snapshots[index - 1] || null;
+}
+
+function resolveYearSwitchSnapshot(targetYear) {
+  const year = String(targetYear || "").trim();
+  if (!year) {
+    return null;
+  }
+
+  const candidates = state.snapshots
+    .map((snapshot) => ({
+      snapshot,
+      meta: getSnapshotMonthMeta(snapshot)
+    }))
+    .filter((item) => item.meta.year === year && item.meta.monthNumber !== "-");
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const currentMeta = getSnapshotMonthMeta(currentSnapshot());
+  const currentMonthNumber = Number(currentMeta.monthNumber);
+  if (!Number.isFinite(currentMonthNumber)) {
+    return candidates[0].snapshot;
+  }
+
+  const exactMatch = candidates.find((item) => Number(item.meta.monthNumber) === currentMonthNumber);
+  if (exactMatch) {
+    return exactMatch.snapshot;
+  }
+
+  const closest = candidates.reduce((best, item) => {
+    const monthNumber = Number(item.meta.monthNumber);
+    if (!Number.isFinite(monthNumber)) {
+      return best;
+    }
+
+    const candidate = {
+      snapshot: item.snapshot,
+      monthNumber,
+      distance: Math.abs(monthNumber - currentMonthNumber)
+    };
+
+    if (!best) {
+      return candidate;
+    }
+
+    if (candidate.distance < best.distance) {
+      return candidate;
+    }
+
+    if (candidate.distance === best.distance && candidate.monthNumber > best.monthNumber) {
+      return candidate;
+    }
+
+    return best;
+  }, null);
+
+  return closest?.snapshot || candidates[0].snapshot;
+}
+
+function updateMonthNavButton(button, snapshot, fallbackLabel, hintLabel = fallbackLabel) {
+  if (!button) {
+    return;
+  }
+
+  const label = snapshot ? `切换到 ${monthLabel(snapshot)}` : fallbackLabel;
+  const isDisabled = !snapshot?.id;
+  button.disabled = isDisabled;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.dataset.navHint = snapshot ? hintLabel : fallbackLabel;
+}
+
+function prefersReducedMotion() {
+  return Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+}
+
+function centerElementInScroller(container, element, behavior = "smooth") {
+  if (!(container instanceof HTMLElement) || !(element instanceof HTMLElement)) {
+    return;
+  }
+
+  const maxScrollLeft = container.scrollWidth - container.clientWidth;
+  if (maxScrollLeft <= 4) {
+    return;
+  }
+
+  const targetLeft = element.offsetLeft - (container.clientWidth - element.offsetWidth) / 2;
+  const nextLeft = Math.max(0, Math.min(maxScrollLeft, targetLeft));
+  container.scrollTo({
+    left: nextLeft,
+    behavior
+  });
+}
+
+function syncMonthNavigatorViewport(shouldAnimate = false) {
+  const behavior = shouldAnimate && !prefersReducedMotion() ? "smooth" : "auto";
+
+  window.requestAnimationFrame(() => {
+    const activeFolder = els.monthYearGroup?.querySelector(".month-folder.is-active");
+    if (activeFolder instanceof HTMLElement) {
+      activeFolder.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+        behavior
+      });
+    }
+
+    const activeMonth = els.monthYearGroup?.querySelector(".month-folder.is-active .month-chip-btn.is-active");
+    const activeMonthStrip = activeMonth?.closest(".month-folder-months");
+    centerElementInScroller(activeMonthStrip, activeMonth, behavior);
+  });
+}
+
+function isTextInputLike(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return Boolean(target.closest("input, textarea, select, button, a, summary, [role='button'], [role='tab']"));
 }
 
 function previousSnapshot() {
@@ -724,12 +881,28 @@ function buildRenderPayload() {
   };
 }
 
-function needsRowReview(item) {
+function getRowReviewLevel(item) {
   if (!item) {
-    return false;
+    return "none";
   }
 
-  return item.cost === null || item.marketValue === null || item.qualityScore >= 1.15;
+  if (item.cost === null || item.marketValue === null) {
+    return "strong";
+  }
+
+  if (item.qualityScore >= 1.75) {
+    return "strong";
+  }
+
+  if (item.qualityScore >= 1.15) {
+    return "mild";
+  }
+
+  return "none";
+}
+
+function needsRowReview(item) {
+  return getRowReviewLevel(item) !== "none";
 }
 
 function buildPerformanceSummary(payload) {
@@ -783,14 +956,16 @@ function buildMonthNavigatorModel() {
   const selectedMeta = getSnapshotMonthMeta(selected);
   const years = [...groups.keys()].sort((a, b) => Number(b) - Number(a));
   const selectedYear = selectedMeta.year !== "-" ? selectedMeta.year : years[0] || "";
-  const selectedIndex = selected ? state.snapshots.findIndex((item) => item.id === selected.id) : -1;
+  const selectedIndex = currentSnapshotIndex();
 
   return {
     groups,
     years,
     selectedYear,
     selectedSnapshotId: selected?.id || null,
-    selectedIndex
+    selectedIndex,
+    olderSnapshot: olderSnapshot(),
+    newerSnapshot: newerSnapshot()
   };
 }
 
@@ -843,7 +1018,7 @@ function summarizeSnapshotReview(rows) {
 
   for (const row of Array.isArray(rows) ? rows : []) {
     const item = toRowModel(row);
-    if (item.qty <= 0 || item.cost === null || item.marketValue === null || item.qualityScore >= 1.15) {
+    if (item.qty <= 0 || needsRowReview(item)) {
       needsReview += 1;
     }
   }
@@ -1047,10 +1222,17 @@ function buildDetailTextPanelHtml(snapshot, rows, postMetrics) {
 function buildSnapshotDetailItemHtml(snapshot, isOpen) {
   const rows = buildRowsFromSnapshot(snapshot);
   const postMetrics = parsePostMetrics(snapshot);
+  const review = summarizeSnapshotReview(snapshot?.rows || []);
   const itemId = String(snapshot?.id || "");
   const month = monthLabel(snapshot);
   const shortDate = formatMonthDay(snapshot?.postedAt);
   const bodyId = `detail-item-body-${itemId}`;
+  const metaParts = [
+    sourceLabel(snapshot?.source),
+    `${rows.length} 只持仓`,
+    `${Array.isArray(snapshot?.images) ? snapshot.images.length : 0} 张原图`,
+    review.needsReview > 0 ? `待复核 ${review.needsReview} 行` : "结构化正常"
+  ];
 
   return `
     <article class="detail-item ${isOpen ? "is-open" : ""}">
@@ -1061,11 +1243,14 @@ function buildSnapshotDetailItemHtml(snapshot, isOpen) {
         aria-expanded="${isOpen ? "true" : "false"}"
         aria-controls="${escapeHtml(bodyId)}"
       >
-        <span class="detail-item-date-wrap">
-          <strong class="detail-item-month">${escapeHtml(month)}</strong>
-          <span class="detail-item-date">${escapeHtml(shortDate)}</span>
+        <span class="detail-item-copy">
+          <span class="detail-item-date-wrap">
+            <strong class="detail-item-month">${escapeHtml(month)}</strong>
+            <span class="detail-item-date">${escapeHtml(shortDate)}</span>
+          </span>
+          <span class="detail-item-meta">${escapeHtml(metaParts.join(" · "))}</span>
         </span>
-        <span class="detail-item-chevron">${isOpen ? "−" : "+"}</span>
+        <span class="detail-item-chevron" aria-hidden="true">›</span>
       </button>
       <div id="${escapeHtml(bodyId)}" class="detail-item-body ${isOpen ? "" : "hidden"}">
         <section class="detail-insight-grid">
@@ -1142,46 +1327,88 @@ function renderMonthSelect() {
   }
 
   const navigatorModel = buildMonthNavigatorModel();
-  const yearButtons = navigatorModel.years.map((year) => {
+  const shouldPulseSelection = state.monthNavFeedbackSnapshotId === navigatorModel.selectedSnapshotId;
+  const yearFolders = navigatorModel.years.map((year) => {
+    const items = navigatorModel.groups.get(year) || [];
     const isActive = navigatorModel.selectedYear === year;
+    const targetSnapshot = resolveYearSwitchSnapshot(year);
+    const targetLabel = targetSnapshot ? monthLabel(targetSnapshot) : `${year}-01`;
+    const activeItem = items.find((item) => item.id === navigatorModel.selectedSnapshotId) || items[0] || null;
+    const folderMeta = isActive
+      ? `当前 ${activeItem?.monthNumber || "--"} 月 · 共 ${items.length} 个月`
+      : `收录 ${items.length} 个月 · 最近 ${items[0]?.monthNumber || "--"} 月`;
+    const monthButtons = items.map((item) => {
+      const isMonthActive = navigatorModel.selectedSnapshotId === item.id;
+      return `
+        <button
+          type="button"
+          class="month-chip-btn ${isMonthActive ? "is-active" : ""} ${
+            isMonthActive && shouldPulseSelection ? "is-just-selected" : ""
+          }"
+          data-select-snapshot="${escapeHtml(item.id)}"
+          aria-pressed="${isMonthActive ? "true" : "false"}"
+          aria-current="${isMonthActive ? "date" : "false"}"
+          title="切换到 ${escapeHtml(item.month)}"
+          aria-label="切换到 ${escapeHtml(item.month)}"
+        >
+          <span>${escapeHtml(item.monthNumber)}</span>
+          <small>月</small>
+        </button>
+      `;
+    });
+
+    const panelId = `month-folder-panel-${escapeHtml(year)}`;
     return `
-      <button
-        type="button"
-        class="month-segment-btn ${isActive ? "is-active" : ""}"
-        data-select-year="${escapeHtml(year)}"
-        aria-pressed="${isActive ? "true" : "false"}"
-      >
-        ${escapeHtml(year)}
-      </button>
+      <div class="month-folder ${isActive ? "is-active" : ""}" data-year-folder="${escapeHtml(year)}">
+        <button
+          type="button"
+          class="month-folder-toggle ${isActive ? "is-active" : ""}"
+          data-select-year="${escapeHtml(year)}"
+          data-select-year-snapshot="${escapeHtml(targetSnapshot?.id || "")}"
+          aria-expanded="${isActive ? "true" : "false"}"
+          aria-controls="${panelId}"
+          title="切换到 ${escapeHtml(targetLabel)}"
+          aria-label="切换到 ${escapeHtml(targetLabel)}"
+        >
+          <span class="month-folder-copy">
+            <span class="month-folder-title-row">
+              <span class="month-folder-title">${escapeHtml(year)}</span>
+              ${isActive ? '<span class="month-folder-badge">当前</span>' : ""}
+            </span>
+            <span class="month-folder-meta">${escapeHtml(folderMeta)}</span>
+          </span>
+          <span class="month-folder-trailing">
+            <span class="month-folder-count">${escapeHtml(String(items.length))}</span>
+            <i class="layui-icon layui-icon-right month-folder-chevron" aria-hidden="true"></i>
+          </span>
+        </button>
+        <div id="${panelId}" class="month-folder-months" ${isActive ? "" : "hidden"}>
+          ${monthButtons.join("")}
+        </div>
+      </div>
     `;
   });
 
-  const monthButtons = (navigatorModel.groups.get(navigatorModel.selectedYear) || []).map((item) => {
-    const isActive = navigatorModel.selectedSnapshotId === item.id;
-    return `
-      <button
-        type="button"
-        class="month-chip-btn ${isActive ? "is-active" : ""}"
-        data-select-snapshot="${escapeHtml(item.id)}"
-        aria-pressed="${isActive ? "true" : "false"}"
-      >
-        <span>${escapeHtml(item.monthNumber)}</span>
-        <small>月</small>
-      </button>
-    `;
-  });
-
-  els.monthYearGroup.innerHTML = yearButtons.join("");
-  els.monthSegmentGroup.innerHTML = monthButtons.join("");
-
-  if (els.monthPrevBtn) {
-    els.monthPrevBtn.disabled =
-      navigatorModel.selectedIndex < 0 || navigatorModel.selectedIndex >= state.snapshots.length - 1;
+  els.monthYearGroup.innerHTML = yearFolders.join("");
+  if (els.monthSegmentGroup) {
+    els.monthSegmentGroup.innerHTML = "";
+    els.monthSegmentGroup.hidden = true;
   }
 
-  if (els.monthNextBtn) {
-    els.monthNextBtn.disabled = navigatorModel.selectedIndex <= 0;
-  }
+  updateMonthNavButton(
+    els.monthPrevBtn,
+    navigatorModel.olderSnapshot,
+    "没有更早月份",
+    navigatorModel.olderSnapshot ? `更早 · ${monthLabel(navigatorModel.olderSnapshot)}` : "没有更早月份"
+  );
+  updateMonthNavButton(
+    els.monthNextBtn,
+    navigatorModel.newerSnapshot,
+    "没有更新月份",
+    navigatorModel.newerSnapshot ? `更新 · ${monthLabel(navigatorModel.newerSnapshot)}` : "没有更新月份"
+  );
+  syncMonthNavigatorViewport(shouldPulseSelection);
+  state.monthNavFeedbackSnapshotId = null;
 }
 
 function parseReferenceStockValue(snapshot) {
@@ -1312,6 +1539,20 @@ function setChartEmptyState(message = "") {
   if (els.monthlyNetworthChart) {
     els.monthlyNetworthChart.classList.toggle("hidden", hasMessage);
   }
+  if (hasMessage) {
+    if (els.chartSeriesCount) {
+      els.chartSeriesCount.textContent = "-";
+    }
+    if (els.chartLatestMonth) {
+      els.chartLatestMonth.textContent = "-";
+    }
+    if (els.chartLatestValue) {
+      els.chartLatestValue.textContent = "-";
+    }
+    if (els.chartSeriesHint) {
+      els.chartSeriesHint.textContent = message;
+    }
+  }
 }
 
 function renderMonthlyChart() {
@@ -1341,6 +1582,22 @@ function renderMonthlyChart() {
   }
 
   setChartEmptyState("");
+
+  const latestPoint = series[series.length - 1] || null;
+  const anomalyCount = series.filter((item) => item.anomaly).length;
+  if (els.chartSeriesCount) {
+    els.chartSeriesCount.textContent = `${series.length} 个月`;
+  }
+  if (els.chartLatestMonth) {
+    els.chartLatestMonth.textContent = latestPoint?.month || "-";
+  }
+  if (els.chartLatestValue) {
+    els.chartLatestValue.textContent = latestPoint ? formatCurrency(latestPoint.value, 0) : "-";
+  }
+  if (els.chartSeriesHint) {
+    els.chartSeriesHint.textContent =
+      anomalyCount > 0 ? `已标记 ${anomalyCount} 个异常波动点，悬停可查看详情。` : "当前曲线未发现异常波动点。";
+  }
 
   state.monthlyChart = new Chart(els.monthlyNetworthChart, {
     type: "line",
@@ -1451,7 +1708,8 @@ function renderAdjustTable(rows) {
       const delta = escapeHtml(formatDelta(item.delta));
       const cost = escapeHtml(formatCost(item.cost));
       const holdingAmount = escapeHtml(item.marketValue === null ? "-" : formatCurrency(item.marketValue, 0));
-      const rowClass = needsRowReview(item) ? "row-review" : "";
+      const reviewLevel = getRowReviewLevel(item);
+      const rowClass = reviewLevel === "none" ? "" : `row-review row-review-${reviewLevel}`;
       return `
         <tr class="${rowClass}">
           <td class="mono">${symbol}</td>
@@ -1528,7 +1786,8 @@ function renderLatestTable(rows) {
       const qty = escapeHtml(formatNumber(item.qty, 0));
       const cost = escapeHtml(formatCost(item.cost));
       const marketValue = escapeHtml(item.marketValue === null ? "-" : formatCost(item.marketValue));
-      const rowClass = needsRowReview(item) ? "row-review" : "";
+      const reviewLevel = getRowReviewLevel(item);
+      const rowClass = reviewLevel === "none" ? "" : `row-review row-review-${reviewLevel}`;
       return `
         <tr class="${rowClass}">
           <td class="mono">${symbol}</td>
@@ -1685,12 +1944,18 @@ async function loadData() {
   renderAll();
 }
 
-function selectSnapshotById(snapshotId) {
+function selectSnapshotById(snapshotId, options = {}) {
+  const { animateNav = true } = options;
   const value = String(snapshotId || "").trim();
   if (!value || !state.snapshots.some((item) => item.id === value)) {
     return;
   }
 
+  if (state.selectedSnapshotId === value) {
+    return;
+  }
+
+  state.monthNavFeedbackSnapshotId = animateNav ? value : null;
   state.selectedSnapshotId = value;
   renderAll();
 }
@@ -1747,8 +2012,7 @@ function bindEvents() {
 
   if (els.monthPrevBtn) {
     els.monthPrevBtn.addEventListener("click", () => {
-      const currentIndex = state.snapshots.findIndex((item) => item.id === state.selectedSnapshotId);
-      const nextSnapshot = currentIndex >= 0 ? state.snapshots[currentIndex + 1] : null;
+      const nextSnapshot = olderSnapshot();
       if (nextSnapshot?.id) {
         selectSnapshotById(nextSnapshot.id);
       }
@@ -1757,8 +2021,7 @@ function bindEvents() {
 
   if (els.monthNextBtn) {
     els.monthNextBtn.addEventListener("click", () => {
-      const currentIndex = state.snapshots.findIndex((item) => item.id === state.selectedSnapshotId);
-      const nextSnapshot = currentIndex > 0 ? state.snapshots[currentIndex - 1] : null;
+      const nextSnapshot = newerSnapshot();
       if (nextSnapshot?.id) {
         selectSnapshotById(nextSnapshot.id);
       }
@@ -1772,6 +2035,15 @@ function bindEvents() {
         return;
       }
 
+      const monthButton = target.closest("[data-select-snapshot]");
+      if (monthButton) {
+        const snapshotId = String(monthButton.getAttribute("data-select-snapshot") || "").trim();
+        if (snapshotId) {
+          selectSnapshotById(snapshotId);
+        }
+        return;
+      }
+
       const button = target.closest("[data-select-year]");
       if (!button) {
         return;
@@ -1782,7 +2054,9 @@ function bindEvents() {
         return;
       }
 
-      const nextSnapshot = state.snapshots.find((item) => getSnapshotMonthMeta(item).year === year);
+      const snapshotId = String(button.getAttribute("data-select-year-snapshot") || "").trim();
+      const nextSnapshot =
+        state.snapshots.find((item) => item.id === snapshotId) || resolveYearSwitchSnapshot(year);
       if (nextSnapshot?.id) {
         selectSnapshotById(nextSnapshot.id);
       }
@@ -1825,11 +2099,44 @@ function bindEvents() {
         return;
       }
 
+      if (state.selectedSnapshotId !== snapshotId) {
+        state.monthNavFeedbackSnapshotId = snapshotId;
+      }
       state.selectedSnapshotId = snapshotId;
       state.detailExpandedId = state.detailExpandedId === snapshotId ? null : snapshotId;
       renderAll();
     });
   }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+
+    if (isTextInputLike(event.target) || isTextInputLike(document.activeElement)) {
+      return;
+    }
+
+    if (event.key === "ArrowLeft") {
+      const snapshot = olderSnapshot();
+      if (!snapshot?.id) {
+        return;
+      }
+
+      event.preventDefault();
+      selectSnapshotById(snapshot.id);
+    }
+
+    if (event.key === "ArrowRight") {
+      const snapshot = newerSnapshot();
+      if (!snapshot?.id) {
+        return;
+      }
+
+      event.preventDefault();
+      selectSnapshotById(snapshot.id);
+    }
+  });
 }
 
 async function bootstrap() {

@@ -357,6 +357,7 @@ app.use("/api/quotes", requireAdminAuth);
 app.use("/api/snapshots", requireAdminAuth);
 app.use("/api/monthly-updates", requireAdminAuth);
 app.use("/api/auto-tracking", requireAdminAuth);
+app.use("/vendor/layui", express.static(path.join(process.cwd(), "node_modules", "layui", "dist")));
 app.use(express.static(path.join(process.cwd(), "public")));
 
 function pushSnapshot(store, source = "manual") {

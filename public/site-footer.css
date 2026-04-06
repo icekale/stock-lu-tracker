@@ -12,20 +12,20 @@ html {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 14px 0 0;
-  border-top: 1px solid var(--color-line-soft);
+  border-top: var(--border-soft);
 }
 
 .site-footer-meta {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
   margin-left: auto;
   color: var(--color-text-muted);
-  font-size: 0.78rem;
+  font-size: var(--text-caption);
 }
 
 .site-footer-item,
@@ -34,8 +34,9 @@ html {
 }
 
 .site-footer-version {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
 .site-footer-link {
@@ -45,9 +46,9 @@ html {
   color: var(--color-accent);
   text-decoration: none;
   white-space: nowrap;
-  width: 18px;
-  height: 18px;
-  transition: color 160ms ease, transform 160ms ease;
+  width: var(--footer-icon-size);
+  height: var(--footer-icon-size);
+  transition: color var(--ease-standard), transform var(--ease-standard);
 }
 
 .site-footer-link:hover {
@@ -56,8 +57,8 @@ html {
 }
 
 .site-footer-github-icon {
-  width: 16px;
-  height: 16px;
+  width: var(--footer-icon-glyph-size);
+  height: var(--footer-icon-glyph-size);
   display: block;
 }
 
@@ -87,26 +88,26 @@ html {
   right: max(18px, env(safe-area-inset-right));
   bottom: max(18px, env(safe-area-inset-bottom));
   z-index: 18;
-  width: 42px;
-  height: 42px;
+  width: var(--floating-button-size);
+  height: var(--floating-button-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--color-line);
-  background: rgba(255, 255, 255, 0.88);
+  border: var(--border-default);
+  background: var(--color-surface-card-soft);
   box-shadow: var(--shadow-sm);
   color: var(--color-text);
   text-decoration: none;
-  font-size: 1rem;
-  font-weight: 700;
-  backdrop-filter: saturate(180%) blur(18px);
-  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  font-size: var(--text-lg);
+  font-weight: var(--font-weight-bold);
+  backdrop-filter: saturate(180%) blur(var(--blur-nav));
+  transition: transform var(--ease-standard), box-shadow var(--ease-standard), background var(--ease-standard);
 }
 
 .page-top-button:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--color-surface-hover);
   box-shadow: var(--shadow-md);
 }
 
@@ -123,7 +124,7 @@ html {
   .page-top-button {
     right: 14px;
     bottom: 14px;
-    width: 40px;
-    height: 40px;
+    width: var(--floating-button-size-sm);
+    height: var(--floating-button-size-sm);
   }
 }

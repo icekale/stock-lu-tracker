@@ -5,152 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>后台登录</title>
     <link rel="stylesheet" href="/design-tokens.css" />
+    <link rel="stylesheet" href="/vendor/layui/css/layui.css" />
+    <link rel="stylesheet" href="/layui-theme.css" />
+    <link rel="stylesheet" href="/admin-login.css" />
     <link rel="stylesheet" href="/site-footer.css" />
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: var(--color-bg);
-        --surface: var(--color-surface);
-        --text: var(--color-text);
-        --muted: var(--color-text-muted);
-        --line: var(--color-line);
-        --primary: var(--color-accent);
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        min-height: 100vh;
-        font-family: var(--font-sans);
-        background: radial-gradient(circle at 16% 20%, #e8f3ff 0%, transparent 45%),
-          radial-gradient(circle at 85% 80%, #e9ecef 0%, transparent 45%), var(--bg);
-        color: var(--text);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 18px;
-        padding: 24px;
-      }
-
-      .card {
-        width: 100%;
-        max-width: 420px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        box-shadow: 0 24px 60px rgba(11, 15, 26, 0.08);
-        padding: 28px;
-      }
-
-      .card-topbar {
-        display: flex;
-        justify-content: flex-start;
-        margin-bottom: 16px;
-      }
-
-      .back-link {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        min-height: 36px;
-        padding: 0 14px;
-        border-radius: 999px;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.82);
-        color: var(--text);
-        font-size: 0.9rem;
-        font-weight: 600;
-        text-decoration: none;
-        transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
-      }
-
-      .back-link:hover {
-        background: #f6f8fb;
-        border-color: rgba(12, 18, 34, 0.16);
-        transform: translateY(-1px);
-      }
-
-      .back-link:focus-visible {
-        outline: 2px solid rgba(0, 113, 227, 0.24);
-        outline-offset: 2px;
-      }
-
-      h1 {
-        margin: 0;
-        font-size: 1.5rem;
-        letter-spacing: -0.02em;
-      }
-
-      p {
-        margin: 8px 0 0;
-        color: var(--muted);
-        font-size: 0.92rem;
-      }
-
-      form {
-        margin-top: 20px;
-        display: grid;
-        gap: 12px;
-      }
-
-      input[type="password"] {
-        width: 100%;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        min-height: 42px;
-        padding: 0 12px;
-        font-size: 0.95rem;
-      }
-
-      input[type="password"]:focus {
-        outline: 2px solid rgba(0, 113, 227, 0.24);
-        border-color: rgba(0, 113, 227, 0.4);
-      }
-
-      button {
-        min-height: 42px;
-        border: 0;
-        border-radius: 12px;
-        background: var(--primary);
-        color: #fff;
-        font-size: 0.95rem;
-        font-weight: 600;
-        cursor: pointer;
-      }
-
-      button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
-
-      .status {
-        margin-top: 12px;
-        font-size: 0.9rem;
-        color: var(--muted);
-        min-height: 1.3em;
-      }
-
-      .status.err {
-        color: #cc2a2a;
-      }
-    </style>
   </head>
-  <body class="login-page">
-    <main class="card">
-      <div class="card-topbar">
-        <a class="back-link" href="/">← 返回主页</a>
+  <body class="admin-login-page login-page">
+    <main class="login-shell">
+      <div class="login-brand">
+        <p class="login-eyebrow">Admin Login</p>
+        <h1 class="login-brand-title">超级鹿鼎公持仓自动跟踪</h1>
+        <p class="login-brand-copy">输入管理密码后进入后台配置中心。</p>
       </div>
-      <h1>后台配置登录</h1>
-      <p>请输入管理密码后进入配置页面。</p>
-      <form id="loginForm">
-        <input id="password" type="password" placeholder="请输入后台密码" autocomplete="current-password" required />
-        <button id="submitBtn" type="submit">进入后台</button>
-      </form>
-      <div id="status" class="status"></div>
+
+      <section class="layui-panel login-card">
+        <div class="login-card-topbar">
+          <a class="layui-btn layui-btn-primary login-back-btn" href="/">
+            <i class="layui-icon layui-icon-left"></i>
+            返回主页
+          </a>
+        </div>
+        <div class="login-card-body">
+          <h2 class="login-title">后台配置登录</h2>
+          <p class="login-subtitle">登录后可配置抓取源、OCR、目录导入与月度校正。</p>
+          <form id="loginForm" class="login-form">
+            <input id="password" class="form-control login-input" type="password" placeholder="请输入后台密码" autocomplete="current-password" required />
+            <button id="submitBtn" class="layui-btn layui-btn-normal layui-btn-fluid" type="submit">进入后台</button>
+          </form>
+          <div id="status" class="login-status"></div>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer site-footer-login" data-site-footer>
@@ -158,7 +42,7 @@
         <div class="site-footer-meta">
           <span class="site-footer-item" data-footer-author data-fallback="Kale">Kale</span>
           <span class="site-footer-sep">·</span>
-          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.14">v0.1.14</span>
+          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.15">v0.1.15</span>
           <span class="site-footer-sep">·</span>
           <a
             class="site-footer-link"
@@ -170,12 +54,7 @@
             aria-label="GitHub：icekale/stock-lu-tracker"
             title="GitHub：icekale/stock-lu-tracker"
           >
-            <svg
-              class="site-footer-github-icon"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-              focusable="false"
-            >
+            <svg class="site-footer-github-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
               <path
                 fill="currentColor"
                 d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.67 7.67 0 0 1 8 4.98c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
@@ -187,6 +66,7 @@
       </div>
     </footer>
 
+    <script src="/vendor/layui/layui.js"></script>
     <script src="/site-footer.js"></script>
     <script>
       const els = {
@@ -239,26 +119,25 @@
 
       els.form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const password = String(els.password.value || "");
+        const password = els.password.value;
         if (!password.trim()) {
-          setStatus("请输入密码", true);
+          setStatus("请输入后台密码", true);
+          els.password.focus();
           return;
         }
 
         els.submitBtn.disabled = true;
-        setStatus("正在验证...");
+        setStatus("登录中...");
 
         try {
           await request("/api/admin-auth/login", {
             method: "POST",
             body: JSON.stringify({ password })
           });
-          setStatus("登录成功，正在跳转...");
+          setStatus("登录成功，正在进入后台...");
           window.location.replace(nextPath);
         } catch (error) {
-          setStatus(`登录失败: ${error.message}`, true);
-          els.password.select();
-        } finally {
+          setStatus(error.message || "登录失败，请重试", true);
           els.submitBtn.disabled = false;
         }
       });
