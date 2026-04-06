@@ -51,6 +51,8 @@ const APP_META = Object.freeze({
   repositoryLabel: "icekale/stock-lu-tracker"
 });
 const CATALOG_CACHE_TTL_MS = Math.max(0, Number(process.env.CATALOG_CACHE_TTL_MS) || 5 * 60 * 1000);
+const AUTO_TRACKING_TIME_ZONE = String(process.env.AUTO_TRACKING_TIME_ZONE || "Asia/Shanghai").trim() || "Asia/Shanghai";
+const AUTO_TRACKING_MIN_DELAY_MS = 60 * 1000;
 
 let autoTrackingRunning = false;
 let autoTrackingTimer = null;
@@ -125,6 +127,196 @@ function toTrimmedText(value) {
 function toOptionalNumber(value, fallback = null) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function getTimeZoneDateParts(date, timeZone = AUTO_TRACKING_TIME_ZONE) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const parts = {};
+
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type === "literal") {
+      continue;
+    }
+    parts[part.type] = Number(part.value);
+  }
+
+  return {
+    year: parts.year || 1970,
+    month: parts.month || 1,
+    day: parts.day || 1,
+    hour: parts.hour || 0,
+    minute: parts.minute || 0,
+    second: parts.second || 0
+  };
+}
+
+function getTimeZoneOffsetMs(date, timeZone = AUTO_TRACKING_TIME_ZONE) {
+  const parts = getTimeZoneDateParts(date, timeZone);
+  const utcTimestamp = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return utcTimestamp - date.getTime();
+}
+
+function zonedTimeToUtc(year, month, day, hour = 0, minute = 0, second = 0, timeZone = AUTO_TRACKING_TIME_ZONE) {
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const offsetMs = getTimeZoneOffsetMs(utcGuess, timeZone);
+  return new Date(utcGuess.getTime() - offsetMs);
+}
+
+function getDaysInMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function shiftMonth(year, month, offset = 1) {
+  const absolute = year * 12 + (month - 1) + offset;
+  const nextYear = Math.floor(absolute / 12);
+  const nextMonth = ((absolute % 12) + 12) % 12 + 1;
+  return {
+    year: nextYear,
+    month: nextMonth
+  };
+}
+
+function formatScheduleDateTime(date, timeZone = AUTO_TRACKING_TIME_ZONE) {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone,
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
+}
+
+function getMonthEndWindowState(now, windowDays, timeZone = AUTO_TRACKING_TIME_ZONE) {
+  const parts = getTimeZoneDateParts(now, timeZone);
+  const daysInMonth = getDaysInMonth(parts.year, parts.month);
+  const startDay = Math.max(1, daysInMonth - windowDays + 1);
+  const inWindow = parts.day >= startDay;
+  const currentWindowStartAt = zonedTimeToUtc(parts.year, parts.month, startDay, 0, 0, 0, timeZone);
+
+  if (!inWindow) {
+    return {
+      inWindow,
+      nextWindowStartAt: currentWindowStartAt
+    };
+  }
+
+  const nextMonth = shiftMonth(parts.year, parts.month, 1);
+  const nextMonthDays = getDaysInMonth(nextMonth.year, nextMonth.month);
+  const nextStartDay = Math.max(1, nextMonthDays - windowDays + 1);
+
+  return {
+    inWindow,
+    nextWindowStartAt: zonedTimeToUtc(nextMonth.year, nextMonth.month, nextStartDay, 0, 0, 0, timeZone)
+  };
+}
+
+function buildAutoTrackingSchedule(configInput, now = new Date()) {
+  const config = mergeAutoTrackingConfig(configInput);
+  const intervalMs = config.intervalMinutes * 60 * 1000;
+
+  if (!config.enabled) {
+    return {
+      mode: "disabled",
+      delayMs: null,
+      nextRunAt: null,
+      scheduleHint: "自动同步已关闭",
+      idleIntervalMs: config.offWindowIntervalHours * 60 * 60 * 1000
+    };
+  }
+
+  if (!config.smartScheduleEnabled) {
+    return {
+      mode: "fixed_interval",
+      delayMs: intervalMs,
+      nextRunAt: new Date(now.getTime() + intervalMs),
+      scheduleHint: `固定每 ${config.intervalMinutes} 分钟抓取一次`,
+      idleIntervalMs: config.offWindowIntervalHours * 60 * 60 * 1000
+    };
+  }
+
+  const windowState = getMonthEndWindowState(now, config.monthEndWindowDays, AUTO_TRACKING_TIME_ZONE);
+  if (windowState.inWindow) {
+    return {
+      mode: "month_end_window",
+      delayMs: intervalMs,
+      nextRunAt: new Date(now.getTime() + intervalMs),
+      scheduleHint: `月底最后 ${config.monthEndWindowDays} 天高频抓取，每 ${config.intervalMinutes} 分钟一次`,
+      idleIntervalMs: config.offWindowIntervalHours * 60 * 60 * 1000
+    };
+  }
+
+  const idleIntervalMs = config.offWindowIntervalHours * 60 * 60 * 1000;
+  const idleCandidateAt = new Date(now.getTime() + idleIntervalMs);
+  const waitForWindow = idleCandidateAt.getTime() >= windowState.nextWindowStartAt.getTime();
+  const nextRunAt = waitForWindow ? windowState.nextWindowStartAt : idleCandidateAt;
+
+  return {
+    mode: "off_window",
+    delayMs: Math.max(AUTO_TRACKING_MIN_DELAY_MS, nextRunAt.getTime() - now.getTime()),
+    nextRunAt,
+    scheduleHint: waitForWindow
+      ? `非月底低频巡检，等待至北京时间 ${formatScheduleDateTime(nextRunAt)} 进入月底窗口`
+      : `非月底低频巡检，每 ${config.offWindowIntervalHours} 小时检查一次`,
+    idleIntervalMs,
+    waitForWindow
+  };
+}
+
+function shouldRunAutoTrackingOnStartup(autoTrackingInput, now = new Date()) {
+  const autoTracking = autoTrackingInput || {};
+  const config = mergeAutoTrackingConfig(autoTracking.config);
+  const schedule = buildAutoTrackingSchedule(config, now);
+
+  if (!config.enabled) {
+    return {
+      shouldRun: false,
+      reason: "disabled",
+      schedule
+    };
+  }
+
+  if (!config.smartScheduleEnabled || !config.skipStartupOutsideWindow || schedule.mode !== "off_window") {
+    return {
+      shouldRun: true,
+      reason: "startup_allowed",
+      schedule
+    };
+  }
+
+  const lastActivityRaw = autoTracking.runtime?.lastSuccessAt || autoTracking.runtime?.lastRunAt || null;
+  if (!lastActivityRaw) {
+    return {
+      shouldRun: true,
+      reason: "no_previous_run",
+      schedule
+    };
+  }
+
+  const lastActivityAt = new Date(lastActivityRaw);
+  if (Number.isNaN(lastActivityAt.getTime())) {
+    return {
+      shouldRun: true,
+      reason: "invalid_previous_run",
+      schedule
+    };
+  }
+
+  const shouldRun = now.getTime() - lastActivityAt.getTime() >= schedule.idleIntervalMs;
+  return {
+    shouldRun,
+    reason: shouldRun ? "idle_interval_elapsed" : "outside_month_end_window",
+    schedule
+  };
 }
 
 function buildCatalogCacheKey(config, options = {}) {
@@ -1199,6 +1391,11 @@ function getAutoTrackingPublic(autoTrackingInput, options = {}) {
     config: {
       enabled: Boolean(config.enabled),
       intervalMinutes: config.intervalMinutes,
+      smartScheduleEnabled: Boolean(config.smartScheduleEnabled),
+      monthEndWindowDays: config.monthEndWindowDays,
+      offWindowIntervalHours: config.offWindowIntervalHours,
+      skipStartupOutsideWindow: Boolean(config.skipStartupOutsideWindow),
+      scheduleTimeZone: AUTO_TRACKING_TIME_ZONE,
       maxPostsPerSource: config.maxPostsPerSource,
       ocrEnabled: Boolean(config.ocrEnabled),
       ocrProvider: config.ocrProvider,
@@ -1361,32 +1558,41 @@ function applyTrackedTrade(quantityBySymbol, trade) {
 
 async function scheduleAutoTracking() {
   if (autoTrackingTimer) {
-    clearInterval(autoTrackingTimer);
+    clearTimeout(autoTrackingTimer);
     autoTrackingTimer = null;
   }
 
   const store = await readStore();
   const autoTracking = ensureAutoTrackingState(store);
   const config = mergeAutoTrackingConfig(autoTracking.config);
+  const schedule = buildAutoTrackingSchedule(config, new Date());
 
   if (!config.enabled) {
     await mutateStore((draft) => {
       const state = ensureAutoTrackingState(draft);
       state.runtime.nextRunAt = null;
+      state.runtime.scheduleMode = schedule.mode;
+      state.runtime.scheduleHint = schedule.scheduleHint;
     });
     return;
   }
 
-  const intervalMs = config.intervalMinutes * 60 * 1000;
-  autoTrackingTimer = setInterval(() => {
+  autoTrackingTimer = setTimeout(() => {
+    autoTrackingTimer = null;
     runAutoTrackingJob("timer").catch((error) => {
       console.error("Auto tracking timer error:", error.message);
     });
-  }, intervalMs);
+  }, schedule.delayMs);
+
+  if (typeof autoTrackingTimer?.unref === "function") {
+    autoTrackingTimer.unref();
+  }
 
   await mutateStore((draft) => {
     const state = ensureAutoTrackingState(draft);
-    state.runtime.nextRunAt = new Date(Date.now() + intervalMs).toISOString();
+    state.runtime.nextRunAt = schedule.nextRunAt ? schedule.nextRunAt.toISOString() : null;
+    state.runtime.scheduleMode = schedule.mode;
+    state.runtime.scheduleHint = schedule.scheduleHint;
   });
 }
 
@@ -1607,11 +1813,6 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
         (Number(autoTracking.runtime.totalImportedSnapshots) || 0) + importedSnapshots;
       autoTracking.runtime.totalImportedTrades =
         (Number(autoTracking.runtime.totalImportedTrades) || 0) + importedTrades;
-
-      const intervalMs = mergeAutoTrackingConfig(autoTracking.config).intervalMinutes * 60 * 1000;
-      autoTracking.runtime.nextRunAt = autoTracking.config.enabled
-        ? new Date(Date.now() + intervalMs).toISOString()
-        : null;
     });
 
     invalidateCatalogCache();
@@ -1645,6 +1846,11 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
     };
   } finally {
     autoTrackingRunning = false;
+    try {
+      await scheduleAutoTracking();
+    } catch (scheduleError) {
+      console.error("Auto tracking reschedule error:", scheduleError.message);
+    }
   }
 }
 
@@ -2160,6 +2366,22 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
         patch.intervalMinutes = Number(payload.intervalMinutes);
       }
 
+      if (typeof payload.smartScheduleEnabled !== "undefined") {
+        patch.smartScheduleEnabled = Boolean(payload.smartScheduleEnabled);
+      }
+
+      if (typeof payload.monthEndWindowDays !== "undefined") {
+        patch.monthEndWindowDays = Number(payload.monthEndWindowDays);
+      }
+
+      if (typeof payload.offWindowIntervalHours !== "undefined") {
+        patch.offWindowIntervalHours = Number(payload.offWindowIntervalHours);
+      }
+
+      if (typeof payload.skipStartupOutsideWindow !== "undefined") {
+        patch.skipStartupOutsideWindow = Boolean(payload.skipStartupOutsideWindow);
+      }
+
       if (typeof payload.maxPostsPerSource !== "undefined") {
         patch.maxPostsPerSource = Number(payload.maxPostsPerSource);
       }
@@ -2561,9 +2783,16 @@ ensureStore()
   .then(async () => {
     await backfillStoredPostMetrics();
     await scheduleAutoTracking();
-    runAutoTrackingJob("startup").catch((error) => {
-      console.error("Auto tracking startup error:", error.message);
-    });
+    const store = await readStore();
+    const autoTracking = ensureAutoTrackingState(store);
+    const startupDecision = shouldRunAutoTrackingOnStartup(autoTracking, new Date());
+    if (startupDecision.shouldRun) {
+      runAutoTrackingJob("startup").catch((error) => {
+        console.error("Auto tracking startup error:", error.message);
+      });
+    } else {
+      console.log(`Auto tracking startup skipped: ${startupDecision.reason}`);
+    }
 
     app.listen(PORT, (error) => {
       if (error) {

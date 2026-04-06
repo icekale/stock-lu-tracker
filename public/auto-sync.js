@@ -230,6 +230,19 @@ function formatOcrProviderLabel(value) {
   return "自动模式";
 }
 
+function formatAutoSchedulePolicy(config) {
+  if (!config) {
+    return "-";
+  }
+  if (!config.smartScheduleEnabled) {
+    return `固定 ${Number(config.intervalMinutes) || 180} 分钟`;
+  }
+
+  return `月底 ${Number(config.monthEndWindowDays) || 2} 天内 ${Number(config.intervalMinutes) || 180} 分钟 / 平时 ${
+    Number(config.offWindowIntervalHours) || 72
+  } 小时`;
+}
+
 function formatNameSourceLabel(value) {
   const source = String(value || "").trim().toLowerCase();
   if (source === "xueqiu") {
@@ -724,6 +737,10 @@ function renderForm() {
 
   setValue("enabled", String(Boolean(config.enabled)));
   setValue("intervalMinutes", String(config.intervalMinutes || 180));
+  setValue("smartScheduleEnabled", String(config.smartScheduleEnabled !== false));
+  setValue("monthEndWindowDays", String(config.monthEndWindowDays || 2));
+  setValue("offWindowIntervalHours", String(config.offWindowIntervalHours || 72));
+  setValue("skipStartupOutsideWindow", String(config.skipStartupOutsideWindow !== false));
   setValue("maxPostsPerSource", String(config.maxPostsPerSource || 6));
   setValue("ocrEnabled", String(Boolean(config.ocrEnabled)));
   setValue("ocrProvider", String(config.ocrProvider || "auto"));
@@ -761,9 +778,10 @@ function renderForm() {
       : config.ocrProvider === "local"
         ? "本地 Tesseract"
         : "自动(Qwen优先)";
+  const scheduleText = runtime.scheduleHint || `调度策略:${formatAutoSchedulePolicy(config)}`;
   const cookieText = `雪球Cookie:${config.hasXueqiuCookie ? "已配置" : "未配置"} / 微博Cookie:${
     config.hasWeiboCookie ? "已配置" : "未配置"
-  } / QwenKey:${config.hasQwenApiKey ? "已配置" : "未配置"} / OCR:${ocrProviderText} / 置顶链接:${pinnedCount}条${regexText}`;
+  } / QwenKey:${config.hasQwenApiKey ? "已配置" : "未配置"} / OCR:${ocrProviderText} / 置顶链接:${pinnedCount}条 / ${scheduleText}${regexText}`;
   const runText = runtime.lastRunAt ? `最近执行: ${formatDateTime(runtime.lastRunAt)}` : "尚未执行";
   const errText = runtime.lastError ? ` | 最近错误: ${runtime.lastError}` : "";
   setStatus(`${cookieText} | ${runText}${errText}`, runtime.lastError ? "err" : "ok");
@@ -804,6 +822,7 @@ function renderSystemStatus() {
   const noteParts = [
     runtime.lastRunAt ? `最近执行 ${formatDateTime(runtime.lastRunAt)}` : "尚未执行",
     runtime.nextRunAt ? `下次 ${formatDateTime(runtime.nextRunAt)}` : config.enabled ? "等待下一轮调度" : "自动同步已关闭",
+    runtime.scheduleHint || `调度 ${formatAutoSchedulePolicy(config)}`,
     `月度指标 ${state.monthlyUpdates.length} 条`,
     issueRowCount > 0 ? `待复核 ${issueRowCount} 行` : "异常检查正常"
   ];
@@ -848,7 +867,7 @@ function renderSystemStatus() {
   }
 
   const cardMetaMap = new Map([
-    [els.systemRuntimeStatus, config.enabled ? "自动同步已开启" : "自动同步已关闭"],
+    [els.systemRuntimeStatus, config.enabled ? (runtime.scheduleHint || formatAutoSchedulePolicy(config)) : "自动同步已关闭"],
     [els.systemLastSuccess, runtime.lastRunAt ? `最近执行 ${formatDateTime(runtime.lastRunAt)}` : "尚未触发抓取"],
     [
       els.systemLatestMonth,
@@ -1449,9 +1468,13 @@ async function handleSaveConfig(event) {
   const payload = Object.fromEntries(formData.entries());
 
   payload.enabled = String(payload.enabled) === "true";
+  payload.smartScheduleEnabled = String(payload.smartScheduleEnabled) === "true";
+  payload.skipStartupOutsideWindow = String(payload.skipStartupOutsideWindow) === "true";
   payload.ocrEnabled = String(payload.ocrEnabled) === "true";
   payload.ocrProvider = String(payload.ocrProvider || "auto").trim();
   payload.intervalMinutes = Number(payload.intervalMinutes);
+  payload.monthEndWindowDays = Number(payload.monthEndWindowDays);
+  payload.offWindowIntervalHours = Number(payload.offWindowIntervalHours);
   payload.maxPostsPerSource = Number(payload.maxPostsPerSource);
   payload.ocrMaxImagesPerPost = Number(payload.ocrMaxImagesPerPost);
   payload.backfillMaxPages = Number(payload.backfillMaxPages);

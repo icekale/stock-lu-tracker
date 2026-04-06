@@ -76,6 +76,10 @@ const QWEN_TABLE_SCHEMAS = Object.freeze([
 const DEFAULT_AUTO_TRACKING = {
   enabled: true,
   intervalMinutes: 180,
+  smartScheduleEnabled: true,
+  monthEndWindowDays: 2,
+  offWindowIntervalHours: 72,
+  skipStartupOutsideWindow: true,
   xueqiuCookie: "",
   weiboCookie: "",
   maxPostsPerSource: 6,
@@ -574,6 +578,22 @@ function clampNumber(value, fallback, min, max) {
   return Math.max(min, Math.min(max, picked));
 }
 
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const text = String(value || "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(text)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(text)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 function normalizeOcrProvider(value) {
   const text = String(value || "").trim().toLowerCase();
   if (text === "qwen" || text === "local") {
@@ -653,7 +673,14 @@ function mergeAutoTrackingConfig(config) {
     ...(config || {})
   };
 
+  merged.smartScheduleEnabled = normalizeBoolean(merged.smartScheduleEnabled, DEFAULT_AUTO_TRACKING.smartScheduleEnabled);
   merged.intervalMinutes = clampNumber(merged.intervalMinutes, 180, 15, 24 * 60);
+  merged.monthEndWindowDays = clampNumber(merged.monthEndWindowDays, 2, 1, 5);
+  merged.offWindowIntervalHours = clampNumber(merged.offWindowIntervalHours, 72, 6, 7 * 24);
+  merged.skipStartupOutsideWindow = normalizeBoolean(
+    merged.skipStartupOutsideWindow,
+    DEFAULT_AUTO_TRACKING.skipStartupOutsideWindow
+  );
   merged.maxPostsPerSource = clampNumber(merged.maxPostsPerSource, 6, 1, 50);
   merged.ocrProvider = normalizeOcrProvider(merged.ocrProvider);
   merged.ocrMaxImagesPerPost = clampNumber(merged.ocrMaxImagesPerPost, 2, 1, 6);
@@ -679,6 +706,8 @@ function ensureAutoTrackingState(store) {
       lastSuccessAt: current.runtime?.lastSuccessAt || null,
       lastError: current.runtime?.lastError || null,
       nextRunAt: current.runtime?.nextRunAt || null,
+      scheduleMode: current.runtime?.scheduleMode || null,
+      scheduleHint: current.runtime?.scheduleHint || "",
       totalImportedSnapshots: Number(current.runtime?.totalImportedSnapshots) || 0,
       totalImportedTrades: Number(current.runtime?.totalImportedTrades) || 0
     },

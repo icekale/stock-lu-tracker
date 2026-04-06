@@ -82,8 +82,34 @@
                 </label>
 
                 <label class="config-field">
-                  <span class="field-label">同步间隔（分钟）</span>
+                  <span class="field-label">月底窗口抓取间隔（分钟）</span>
                   <input class="form-control" name="intervalMinutes" type="number" min="15" max="1440" value="180" />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">智能月底调度</span>
+                  <select name="smartScheduleEnabled" class="form-control">
+                    <option value="true">开启</option>
+                    <option value="false">关闭</option>
+                  </select>
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">月底高频窗口（天）</span>
+                  <input class="form-control" name="monthEndWindowDays" type="number" min="1" max="5" value="2" />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">非月底巡检间隔（小时）</span>
+                  <input class="form-control" name="offWindowIntervalHours" type="number" min="6" max="168" value="72" />
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">非月底启动立即抓取</span>
+                  <select name="skipStartupOutsideWindow" class="form-control">
+                    <option value="true">关闭</option>
+                    <option value="false">开启</option>
+                  </select>
                 </label>
 
                 <label class="config-field">

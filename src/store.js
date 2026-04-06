@@ -16,6 +16,10 @@ const DEFAULT_STORE = {
     config: {
       enabled: true,
       intervalMinutes: 180,
+      smartScheduleEnabled: true,
+      monthEndWindowDays: 2,
+      offWindowIntervalHours: 72,
+      skipStartupOutsideWindow: true,
       xueqiuCookie: "",
       weiboCookie: "",
       maxPostsPerSource: 6,
@@ -34,6 +38,8 @@ const DEFAULT_STORE = {
       lastSuccessAt: null,
       lastError: null,
       nextRunAt: null,
+      scheduleMode: null,
+      scheduleHint: "",
       totalImportedSnapshots: 0,
       totalImportedTrades: 0
     },
