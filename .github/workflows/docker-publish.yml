@@ -19,6 +19,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Read Package Version
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
 
@@ -38,6 +46,7 @@ jobs:
           images: icekale/stock-lu-tracker
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=v${{ steps.package.outputs.version }},enable={{is_default_branch}}
             type=sha,prefix=sha-
             type=ref,event=tag
 
