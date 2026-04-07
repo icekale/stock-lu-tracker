@@ -80,6 +80,8 @@ const DEFAULT_AUTO_TRACKING = {
   monthEndWindowDays: 2,
   offWindowIntervalHours: 72,
   skipStartupOutsideWindow: true,
+  cookieKeepAliveEnabled: true,
+  cookieKeepAliveIntervalHours: 12,
   xueqiuCookie: "",
   weiboCookie: "",
   maxPostsPerSource: 6,
@@ -681,6 +683,16 @@ function mergeAutoTrackingConfig(config) {
     merged.skipStartupOutsideWindow,
     DEFAULT_AUTO_TRACKING.skipStartupOutsideWindow
   );
+  merged.cookieKeepAliveEnabled = normalizeBoolean(
+    merged.cookieKeepAliveEnabled,
+    DEFAULT_AUTO_TRACKING.cookieKeepAliveEnabled
+  );
+  merged.cookieKeepAliveIntervalHours = clampNumber(
+    merged.cookieKeepAliveIntervalHours,
+    DEFAULT_AUTO_TRACKING.cookieKeepAliveIntervalHours,
+    4,
+    7 * 24
+  );
   merged.maxPostsPerSource = clampNumber(merged.maxPostsPerSource, 6, 1, 50);
   merged.ocrProvider = normalizeOcrProvider(merged.ocrProvider);
   merged.ocrMaxImagesPerPost = clampNumber(merged.ocrMaxImagesPerPost, 2, 1, 6);
@@ -706,6 +718,10 @@ function ensureAutoTrackingState(store) {
       lastSuccessAt: current.runtime?.lastSuccessAt || null,
       lastError: current.runtime?.lastError || null,
       nextRunAt: current.runtime?.nextRunAt || null,
+      lastCookieKeepAliveAt: current.runtime?.lastCookieKeepAliveAt || null,
+      lastCookieKeepAliveSuccessAt: current.runtime?.lastCookieKeepAliveSuccessAt || null,
+      lastCookieKeepAliveError: current.runtime?.lastCookieKeepAliveError || null,
+      nextCookieKeepAliveAt: current.runtime?.nextCookieKeepAliveAt || null,
       scheduleMode: current.runtime?.scheduleMode || null,
       scheduleHint: current.runtime?.scheduleHint || "",
       totalImportedSnapshots: Number(current.runtime?.totalImportedSnapshots) || 0,
@@ -4113,10 +4129,141 @@ async function collectSuperLudinggongPostCatalog(inputConfig, options = {}) {
   };
 }
 
+async function keepAliveXueqiuCookie(config) {
+  const cookieState = getCookieState(config?.xueqiuCookie);
+  if (cookieState !== "ok") {
+    return {
+      source: "xueqiu",
+      ok: false,
+      skipped: true,
+      logLevel: cookieState === "sample" ? "warn" : "info",
+      message: cookieWarnText("雪球", cookieState)
+    };
+  }
+
+  const headers = {
+    "User-Agent": "Mozilla/5.0",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    Referer: "https://xueqiu.com/",
+    Cookie: config.xueqiuCookie
+  };
+  const response = await fetchWithTimeout(`https://xueqiu.com/u/${XUEQIU_UID}`, {
+    headers
+  });
+  const text = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`雪球 Cookie 保活失败 (${response.status})`);
+  }
+
+  if (text.length < 1000) {
+    throw new Error("雪球 Cookie 保活返回内容异常");
+  }
+
+  return {
+    source: "xueqiu",
+    ok: true,
+    skipped: false,
+    message: "雪球 Cookie 保活成功"
+  };
+}
+
+async function keepAliveWeiboCookie(config) {
+  const cookieState = getCookieState(config?.weiboCookie);
+  if (cookieState !== "ok") {
+    return {
+      source: "weibo",
+      ok: false,
+      skipped: true,
+      logLevel: cookieState === "sample" ? "warn" : "info",
+      message: cookieWarnText("微博", cookieState)
+    };
+  }
+
+  const endpoint = `https://weibo.com/ajax/statuses/mymblog?uid=${WEIBO_UID}&page=1&feature=0`;
+  const headers = buildWeiboHeaders(config.weiboCookie, `https://weibo.com/u/${WEIBO_UID}`);
+  await requestJson(endpoint, { headers }, "微博 Cookie 保活");
+
+  return {
+    source: "weibo",
+    ok: true,
+    skipped: false,
+    message: "微博 Cookie 保活成功"
+  };
+}
+
+async function keepCookiesAlive(inputConfig) {
+  const config = mergeAutoTrackingConfig(inputConfig);
+  const logs = [];
+  const addLog = (level, message, meta = null) => {
+    logs.push({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      createdAt: new Date().toISOString(),
+      level,
+      message,
+      meta
+    });
+  };
+
+  const tasks = [keepAliveXueqiuCookie, keepAliveWeiboCookie];
+  const results = [];
+  let successCount = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
+
+  for (const task of tasks) {
+    try {
+      const result = await task(config);
+      results.push(result);
+      if (result.skipped) {
+        skippedCount += 1;
+        addLog(result.logLevel || "info", result.message, {
+          source: result.source
+        });
+        continue;
+      }
+
+      successCount += 1;
+      addLog("info", result.message, {
+        source: result.source
+      });
+    } catch (error) {
+      const source = task === keepAliveXueqiuCookie ? "xueqiu" : "weibo";
+      failedCount += 1;
+      results.push({
+        source,
+        ok: false,
+        skipped: false,
+        message: error.message
+      });
+      addLog("error", `${source === "xueqiu" ? "雪球" : "微博"} Cookie 保活失败: ${error.message}`, {
+        source
+      });
+    }
+  }
+
+  if (successCount <= 0 && failedCount <= 0) {
+    addLog("warn", "Cookie 保活未执行：暂无可用的雪球或微博 Cookie");
+  }
+
+  return {
+    ok: failedCount <= 0,
+    skipped: successCount <= 0 && failedCount <= 0,
+    reason: successCount <= 0 && failedCount <= 0 ? "暂无可用的雪球或微博 Cookie" : null,
+    successCount,
+    failedCount,
+    skippedCount,
+    results,
+    logs
+  };
+}
+
 module.exports = {
   DEFAULT_AUTO_TRACKING,
   ensureAutoTrackingState,
   mergeAutoTrackingConfig,
   collectSuperLudinggongSnapshots,
-  collectSuperLudinggongPostCatalog
+  collectSuperLudinggongPostCatalog,
+  keepCookiesAlive
 };

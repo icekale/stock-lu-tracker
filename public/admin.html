@@ -113,6 +113,19 @@
                 </label>
 
                 <label class="config-field">
+                  <span class="field-label">Cookie 保活</span>
+                  <select name="cookieKeepAliveEnabled" class="form-control">
+                    <option value="true">开启</option>
+                    <option value="false">关闭</option>
+                  </select>
+                </label>
+
+                <label class="config-field">
+                  <span class="field-label">Cookie 保活间隔（小时）</span>
+                  <input class="form-control" name="cookieKeepAliveIntervalHours" type="number" min="4" max="168" value="12" />
+                </label>
+
+                <label class="config-field">
                   <span class="field-label">单源抓取条数</span>
                   <input class="form-control" name="maxPostsPerSource" type="number" min="1" max="20" value="6" />
                 </label>
@@ -197,7 +210,7 @@
 
                 <label class="config-field full-row">
                   <span class="field-label">说明</span>
-                  <input class="form-control" value="Cookie / Qwen Key 仅本地保存，用于自动抓取超级鹿鼎公持仓帖子" readonly />
+                  <input class="form-control" value="Cookie / Qwen Key 仅本地保存；输入框留空会继续使用已保存 Cookie。若未保存对应 Cookie，该站点的置顶、时间线、历史回溯会自动跳过；Cookie 保活只能尽力维持登录态，若站点主动失效仍需重新获取" readonly />
                 </label>
               </div>
 
@@ -206,6 +219,7 @@
                   <span class="action-cluster-label">保存与同步</span>
                   <div class="action-row">
                     <button class="layui-btn layui-btn-normal" type="submit">保存自动配置</button>
+                    <button class="layui-btn layui-btn-primary" type="button" id="runCookieKeepAliveBtn">立即保活一次</button>
                     <button class="layui-btn layui-btn-primary" type="button" id="runAutoSyncBtn">立即抓取一次</button>
                   </div>
                 </div>
@@ -229,7 +243,7 @@
               </div>
               <div class="helper-note">
                 <span class="helper-note-label">推荐流程</span>
-                <p class="helper-note-copy">保存配置后，先抓取全部月份目录，再导入选中月份，最后查看异常检查和月度指标校正。</p>
+                <p class="helper-note-copy">保存配置后，可先执行一次 Cookie 保活确认登录态正常，再抓取全部月份目录、导入选中月份，最后查看异常检查和月度指标校正。</p>
               </div>
               <p class="inline-status config-status" id="autoSyncText">等待首次自动抓取</p>
             </form>

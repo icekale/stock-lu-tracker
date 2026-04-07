@@ -13,7 +13,8 @@ const {
   ensureAutoTrackingState,
   mergeAutoTrackingConfig,
   collectSuperLudinggongSnapshots,
-  collectSuperLudinggongPostCatalog
+  collectSuperLudinggongPostCatalog,
+  keepCookiesAlive
 } = require("./super-ludinggong-sync");
 
 const app = express();
@@ -56,6 +57,8 @@ const AUTO_TRACKING_MIN_DELAY_MS = 60 * 1000;
 
 let autoTrackingRunning = false;
 let autoTrackingTimer = null;
+let cookieKeepAliveRunning = false;
+let cookieKeepAliveTimer = null;
 const catalogCache = new Map();
 const catalogInFlight = new Map();
 
@@ -315,6 +318,69 @@ function shouldRunAutoTrackingOnStartup(autoTrackingInput, now = new Date()) {
   return {
     shouldRun,
     reason: shouldRun ? "idle_interval_elapsed" : "outside_month_end_window",
+    schedule
+  };
+}
+
+function buildCookieKeepAliveSchedule(configInput, runtimeInput = {}, now = new Date()) {
+  const config = mergeAutoTrackingConfig(configInput);
+  const runtime = runtimeInput || {};
+
+  if (!config.cookieKeepAliveEnabled) {
+    return {
+      mode: "disabled",
+      delayMs: null,
+      nextRunAt: null,
+      scheduleHint: "Cookie 保活已关闭"
+    };
+  }
+
+  const intervalMs = config.cookieKeepAliveIntervalHours * 60 * 60 * 1000;
+  const lastActivityRaw = runtime.lastCookieKeepAliveSuccessAt || runtime.lastCookieKeepAliveAt || null;
+  if (!lastActivityRaw) {
+    return {
+      mode: "initial",
+      delayMs: AUTO_TRACKING_MIN_DELAY_MS,
+      nextRunAt: new Date(now.getTime() + AUTO_TRACKING_MIN_DELAY_MS),
+      scheduleHint: `Cookie 保活已开启，每 ${config.cookieKeepAliveIntervalHours} 小时执行一次`
+    };
+  }
+
+  const lastActivityAt = new Date(lastActivityRaw);
+  if (Number.isNaN(lastActivityAt.getTime())) {
+    return {
+      mode: "initial",
+      delayMs: AUTO_TRACKING_MIN_DELAY_MS,
+      nextRunAt: new Date(now.getTime() + AUTO_TRACKING_MIN_DELAY_MS),
+      scheduleHint: `Cookie 保活已开启，每 ${config.cookieKeepAliveIntervalHours} 小时执行一次`
+    };
+  }
+
+  const nextDueAt = new Date(lastActivityAt.getTime() + intervalMs);
+  if (nextDueAt.getTime() <= now.getTime()) {
+    return {
+      mode: "overdue",
+      delayMs: AUTO_TRACKING_MIN_DELAY_MS,
+      nextRunAt: new Date(now.getTime() + AUTO_TRACKING_MIN_DELAY_MS),
+      scheduleHint: `Cookie 保活已到期，准备执行（间隔 ${config.cookieKeepAliveIntervalHours} 小时）`,
+      overdue: true
+    };
+  }
+
+  return {
+    mode: "scheduled",
+    delayMs: Math.max(AUTO_TRACKING_MIN_DELAY_MS, nextDueAt.getTime() - now.getTime()),
+    nextRunAt: nextDueAt,
+    scheduleHint: `Cookie 保活每 ${config.cookieKeepAliveIntervalHours} 小时执行一次`
+  };
+}
+
+function shouldRunCookieKeepAliveOnStartup(autoTrackingInput, now = new Date()) {
+  const autoTracking = autoTrackingInput || {};
+  const schedule = buildCookieKeepAliveSchedule(autoTracking.config, autoTracking.runtime, now);
+  return {
+    shouldRun: schedule.mode === "initial" || schedule.mode === "overdue",
+    reason: schedule.mode,
     schedule
   };
 }
@@ -1395,6 +1461,8 @@ function getAutoTrackingPublic(autoTrackingInput, options = {}) {
       monthEndWindowDays: config.monthEndWindowDays,
       offWindowIntervalHours: config.offWindowIntervalHours,
       skipStartupOutsideWindow: Boolean(config.skipStartupOutsideWindow),
+      cookieKeepAliveEnabled: Boolean(config.cookieKeepAliveEnabled),
+      cookieKeepAliveIntervalHours: config.cookieKeepAliveIntervalHours,
       scheduleTimeZone: AUTO_TRACKING_TIME_ZONE,
       maxPostsPerSource: config.maxPostsPerSource,
       ocrEnabled: Boolean(config.ocrEnabled),
@@ -1593,6 +1661,42 @@ async function scheduleAutoTracking() {
     state.runtime.nextRunAt = schedule.nextRunAt ? schedule.nextRunAt.toISOString() : null;
     state.runtime.scheduleMode = schedule.mode;
     state.runtime.scheduleHint = schedule.scheduleHint;
+  });
+}
+
+async function scheduleCookieKeepAlive() {
+  if (cookieKeepAliveTimer) {
+    clearTimeout(cookieKeepAliveTimer);
+    cookieKeepAliveTimer = null;
+  }
+
+  const store = await readStore();
+  const autoTracking = ensureAutoTrackingState(store);
+  const config = mergeAutoTrackingConfig(autoTracking.config);
+  const schedule = buildCookieKeepAliveSchedule(config, autoTracking.runtime, new Date());
+
+  if (!config.cookieKeepAliveEnabled) {
+    await mutateStore((draft) => {
+      const state = ensureAutoTrackingState(draft);
+      state.runtime.nextCookieKeepAliveAt = null;
+    });
+    return;
+  }
+
+  cookieKeepAliveTimer = setTimeout(() => {
+    cookieKeepAliveTimer = null;
+    runCookieKeepAliveJob("timer").catch((error) => {
+      console.error("Cookie keep-alive timer error:", error.message);
+    });
+  }, schedule.delayMs);
+
+  if (typeof cookieKeepAliveTimer?.unref === "function") {
+    cookieKeepAliveTimer.unref();
+  }
+
+  await mutateStore((draft) => {
+    const state = ensureAutoTrackingState(draft);
+    state.runtime.nextCookieKeepAliveAt = schedule.nextRunAt ? schedule.nextRunAt.toISOString() : null;
   });
 }
 
@@ -1850,6 +1954,76 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
       await scheduleAutoTracking();
     } catch (scheduleError) {
       console.error("Auto tracking reschedule error:", scheduleError.message);
+    }
+  }
+}
+
+async function runCookieKeepAliveJob(trigger = "manual") {
+  if (cookieKeepAliveRunning) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Cookie 保活任务正在执行中"
+    };
+  }
+
+  cookieKeepAliveRunning = true;
+  const startedAt = new Date().toISOString();
+
+  try {
+    const before = await readStore();
+    const autoTrackingBefore = ensureAutoTrackingState(before);
+    const config = mergeAutoTrackingConfig(autoTrackingBefore.config);
+
+    if (!config.cookieKeepAliveEnabled) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "Cookie 保活已关闭"
+      };
+    }
+
+    const result = await keepCookiesAlive(config);
+    const completedAt = new Date().toISOString();
+    const firstFailureMessage =
+      result.results.find((item) => item && item.ok === false && !item.skipped)?.message || null;
+
+    await mutateStore((draft) => {
+      const autoTracking = ensureAutoTrackingState(draft);
+      autoTracking.runtime.lastCookieKeepAliveAt = startedAt;
+      if (result.successCount > 0) {
+        autoTracking.runtime.lastCookieKeepAliveSuccessAt = completedAt;
+      }
+      autoTracking.runtime.lastCookieKeepAliveError = firstFailureMessage;
+      appendAutoTrackingLogs(autoTracking, result.logs);
+    });
+
+    return result;
+  } catch (error) {
+    await mutateStore((draft) => {
+      const autoTracking = ensureAutoTrackingState(draft);
+      autoTracking.runtime.lastCookieKeepAliveAt = startedAt;
+      autoTracking.runtime.lastCookieKeepAliveError = error.message;
+      appendAutoTrackingLogs(autoTracking, [
+        {
+          id: `${Date.now()}-cookie-keepalive-fatal`,
+          createdAt: new Date().toISOString(),
+          level: "error",
+          message: `Cookie 保活失败: ${error.message}`
+        }
+      ]);
+    });
+
+    return {
+      ok: false,
+      error: error.message
+    };
+  } finally {
+    cookieKeepAliveRunning = false;
+    try {
+      await scheduleCookieKeepAlive();
+    } catch (scheduleError) {
+      console.error("Cookie keep-alive reschedule error:", scheduleError.message);
     }
   }
 }
@@ -2382,6 +2556,14 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
         patch.skipStartupOutsideWindow = Boolean(payload.skipStartupOutsideWindow);
       }
 
+      if (typeof payload.cookieKeepAliveEnabled !== "undefined") {
+        patch.cookieKeepAliveEnabled = Boolean(payload.cookieKeepAliveEnabled);
+      }
+
+      if (typeof payload.cookieKeepAliveIntervalHours !== "undefined") {
+        patch.cookieKeepAliveIntervalHours = Number(payload.cookieKeepAliveIntervalHours);
+      }
+
       if (typeof payload.maxPostsPerSource !== "undefined") {
         patch.maxPostsPerSource = Number(payload.maxPostsPerSource);
       }
@@ -2452,6 +2634,7 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
 
     invalidateCatalogCache();
     await scheduleAutoTracking();
+    await scheduleCookieKeepAlive();
 
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
@@ -2472,6 +2655,23 @@ app.post("/api/auto-tracking/run", async (_req, res, next) => {
     const autoTracking = ensureAutoTrackingState(store);
 
     res.json({
+      result,
+      autoTracking: getAutoTrackingPublic(autoTracking),
+      latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auto-tracking/cookie-keepalive", async (_req, res, next) => {
+  try {
+    const result = await runCookieKeepAliveJob("manual");
+    const store = await readStore();
+    const autoTracking = ensureAutoTrackingState(store);
+
+    res.json({
+      ok: true,
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
@@ -2783,6 +2983,7 @@ ensureStore()
   .then(async () => {
     await backfillStoredPostMetrics();
     await scheduleAutoTracking();
+    await scheduleCookieKeepAlive();
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
     const startupDecision = shouldRunAutoTrackingOnStartup(autoTracking, new Date());
@@ -2792,6 +2993,15 @@ ensureStore()
       });
     } else {
       console.log(`Auto tracking startup skipped: ${startupDecision.reason}`);
+    }
+
+    const cookieKeepAliveStartupDecision = shouldRunCookieKeepAliveOnStartup(autoTracking, new Date());
+    if (cookieKeepAliveStartupDecision.shouldRun) {
+      runCookieKeepAliveJob("startup").catch((error) => {
+        console.error("Cookie keep-alive startup error:", error.message);
+      });
+    } else {
+      console.log(`Cookie keep-alive startup skipped: ${cookieKeepAliveStartupDecision.reason}`);
     }
 
     app.listen(PORT, (error) => {

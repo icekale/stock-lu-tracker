@@ -19,6 +19,7 @@ const state = {
 
 const els = {
   autoConfigForm: document.getElementById("autoConfigForm"),
+  runCookieKeepAliveBtn: document.getElementById("runCookieKeepAliveBtn"),
   runAutoSyncBtn: document.getElementById("runAutoSyncBtn"),
   runBackfillBtn: document.getElementById("runBackfillBtn"),
   loadCatalogBtn: document.getElementById("loadCatalogBtn"),
@@ -241,6 +242,82 @@ function formatAutoSchedulePolicy(config) {
   return `月底 ${Number(config.monthEndWindowDays) || 2} 天内 ${Number(config.intervalMinutes) || 180} 分钟 / 平时 ${
     Number(config.offWindowIntervalHours) || 72
   } 小时`;
+}
+
+function formatCookieKeepAlivePolicy(config) {
+  if (!config?.cookieKeepAliveEnabled) {
+    return "Cookie 保活关闭";
+  }
+
+  return `Cookie 保活 ${Number(config.cookieKeepAliveIntervalHours) || 12} 小时`;
+}
+
+function formatSavedCookieUsage(sourceLabel, hasSavedCookie, fallbackLabel = "相关抓取") {
+  if (hasSavedCookie) {
+    return `${sourceLabel} Cookie 使用已保存值`;
+  }
+
+  return `${sourceLabel} Cookie 未保存，${fallbackLabel}会跳过`;
+}
+
+function collectCookieSkipTips(logs) {
+  const items = Array.isArray(logs) ? logs : [];
+  const tips = new Set();
+
+  for (const item of items) {
+    const message = String(item?.message || "").trim();
+    if (!message || !message.includes("Cookie")) {
+      continue;
+    }
+
+    if (message.includes("雪球")) {
+      if (message.includes("历史回溯")) {
+        tips.add("未保存雪球 Cookie，历史回溯已跳过");
+        continue;
+      }
+      if (message.includes("置顶链接")) {
+        tips.add("未保存雪球 Cookie，雪球置顶链接已跳过");
+        continue;
+      }
+      if (message.includes("时间线")) {
+        tips.add("未保存雪球 Cookie，雪球时间线已跳过");
+        continue;
+      }
+      if (message.includes("示例值")) {
+        tips.add("雪球 Cookie 当前仍是示例值，相关雪球抓取已跳过");
+        continue;
+      }
+      tips.add("雪球 Cookie 不可用，相关雪球抓取已跳过");
+      continue;
+    }
+
+    if (message.includes("微博")) {
+      if (message.includes("置顶链接")) {
+        tips.add("未保存微博 Cookie，微博置顶链接已跳过");
+        continue;
+      }
+      if (message.includes("时间线")) {
+        tips.add("未保存微博 Cookie，微博时间线已跳过");
+        continue;
+      }
+      if (message.includes("示例值")) {
+        tips.add("微博 Cookie 当前仍是示例值，相关微博抓取已跳过");
+        continue;
+      }
+      tips.add("微博 Cookie 不可用，相关微博抓取已跳过");
+    }
+  }
+
+  return [...tips];
+}
+
+function formatCookieSkipSuffix(logs) {
+  const tips = collectCookieSkipTips(logs);
+  if (tips.length === 0) {
+    return "";
+  }
+
+  return `；注意：${tips.slice(0, 2).join("；")}`;
 }
 
 function formatNameSourceLabel(value) {
@@ -668,6 +745,7 @@ function setActionBusy(isBusy) {
   state.actionBusy = Boolean(isBusy);
 
   [
+    els.runCookieKeepAliveBtn,
     els.runAutoSyncBtn,
     els.runBackfillBtn,
     els.loadCatalogBtn,
@@ -707,9 +785,49 @@ function resolveAutoTrackingResultStatus(result, successPrefix) {
 
   const importedSnapshots = Number(result?.importedSnapshots) || 0;
   const importedTrades = Number(result?.importedTrades) || 0;
+  const cookieSuffix = formatCookieSkipSuffix(result?.logs);
+  const noImportedData = importedSnapshots <= 0 && importedTrades <= 0;
+  return {
+    level: noImportedData && cookieSuffix ? "err" : "ok",
+    text: noImportedData
+      ? `${successPrefix}完成：未导入新数据${cookieSuffix}`
+      : `${successPrefix}完成：快照 ${importedSnapshots} 条，交易 ${importedTrades} 条${cookieSuffix}`
+  };
+}
+
+function resolveCookieKeepAliveResultStatus(result) {
+  if (result?.error) {
+    return {
+      level: "err",
+      text: `Cookie 保活失败: ${result.error}`
+    };
+  }
+
+  if (result?.skipped) {
+    return {
+      level: "err",
+      text: result.reason || "当前没有可执行的 Cookie 保活目标"
+    };
+  }
+
+  const successCount = Number(result?.successCount) || 0;
+  const failedCount = Number(result?.failedCount) || 0;
+  if (failedCount > 0 && successCount > 0) {
+    return {
+      level: "err",
+      text: `Cookie 保活部分成功：成功 ${successCount} 个，失败 ${failedCount} 个`
+    };
+  }
+  if (failedCount > 0) {
+    return {
+      level: "err",
+      text: `Cookie 保活失败：失败 ${failedCount} 个`
+    };
+  }
+
   return {
     level: "ok",
-    text: `${successPrefix}完成：快照 ${importedSnapshots} 条，交易 ${importedTrades} 条`
+    text: `Cookie 保活完成：成功 ${successCount} 个`
   };
 }
 
@@ -741,6 +859,8 @@ function renderForm() {
   setValue("monthEndWindowDays", String(config.monthEndWindowDays || 2));
   setValue("offWindowIntervalHours", String(config.offWindowIntervalHours || 72));
   setValue("skipStartupOutsideWindow", String(config.skipStartupOutsideWindow !== false));
+  setValue("cookieKeepAliveEnabled", String(config.cookieKeepAliveEnabled !== false));
+  setValue("cookieKeepAliveIntervalHours", String(config.cookieKeepAliveIntervalHours || 12));
   setValue("maxPostsPerSource", String(config.maxPostsPerSource || 6));
   setValue("ocrEnabled", String(Boolean(config.ocrEnabled)));
   setValue("ocrProvider", String(config.ocrProvider || "auto"));
@@ -779,12 +899,24 @@ function renderForm() {
         ? "本地 Tesseract"
         : "自动(Qwen优先)";
   const scheduleText = runtime.scheduleHint || `调度策略:${formatAutoSchedulePolicy(config)}`;
-  const cookieText = `雪球Cookie:${config.hasXueqiuCookie ? "已配置" : "未配置"} / 微博Cookie:${
-    config.hasWeiboCookie ? "已配置" : "未配置"
-  } / QwenKey:${config.hasQwenApiKey ? "已配置" : "未配置"} / OCR:${ocrProviderText} / 置顶链接:${pinnedCount}条 / ${scheduleText}${regexText}`;
+  const cookieKeepAliveText = formatCookieKeepAlivePolicy(config);
+  const cookieText = `${formatSavedCookieUsage("雪球", config.hasXueqiuCookie, "雪球置顶、时间线与历史回溯")} / ${formatSavedCookieUsage(
+    "微博",
+    config.hasWeiboCookie,
+    "微博相关抓取"
+  )} / QwenKey:${config.hasQwenApiKey ? "已配置" : "未配置"} / OCR:${ocrProviderText} / ${cookieKeepAliveText} / 置顶链接:${pinnedCount}条 / ${scheduleText}${regexText}`;
   const runText = runtime.lastRunAt ? `最近执行: ${formatDateTime(runtime.lastRunAt)}` : "尚未执行";
-  const errText = runtime.lastError ? ` | 最近错误: ${runtime.lastError}` : "";
-  setStatus(`${cookieText} | ${runText}${errText}`, runtime.lastError ? "err" : "ok");
+  const keepAliveRunText = runtime.lastCookieKeepAliveSuccessAt
+    ? `最近保活: ${formatDateTime(runtime.lastCookieKeepAliveSuccessAt)}`
+    : "尚未保活";
+  const errText = runtime.lastError ? ` | 最近抓取错误: ${runtime.lastError}` : "";
+  const keepAliveErrText = runtime.lastCookieKeepAliveError
+    ? ` | 最近保活错误: ${runtime.lastCookieKeepAliveError}`
+    : "";
+  setStatus(
+    `${cookieText} | ${runText} | ${keepAliveRunText}${errText}${keepAliveErrText}`,
+    runtime.lastError || runtime.lastCookieKeepAliveError ? "err" : "ok"
+  );
 }
 
 function renderSystemStatus() {
@@ -815,13 +947,21 @@ function renderSystemStatus() {
 
   const ocrText = config.ocrEnabled ? formatOcrProviderLabel(config.ocrProvider) : "已关闭";
   const credentialText = [
-    `雪球 ${config.hasXueqiuCookie ? "已配" : "未配"}`,
-    `微博 ${config.hasWeiboCookie ? "已配" : "未配"}`,
-    `Qwen ${config.hasQwenApiKey ? "已配" : "未配"}`
+    config.hasXueqiuCookie ? "雪球 已保存" : "雪球 未保存",
+    config.hasWeiboCookie ? "微博 已保存" : "微博 未保存",
+    `Qwen ${config.hasQwenApiKey ? "已配" : "未配"}`,
+    config.cookieKeepAliveEnabled ? `保活 ${Number(config.cookieKeepAliveIntervalHours) || 12}h` : "保活 关闭"
   ].join(" / ");
   const noteParts = [
     runtime.lastRunAt ? `最近执行 ${formatDateTime(runtime.lastRunAt)}` : "尚未执行",
     runtime.nextRunAt ? `下次 ${formatDateTime(runtime.nextRunAt)}` : config.enabled ? "等待下一轮调度" : "自动同步已关闭",
+    runtime.nextCookieKeepAliveAt
+      ? `保活下次 ${formatDateTime(runtime.nextCookieKeepAliveAt)}`
+      : config.cookieKeepAliveEnabled
+        ? "等待 Cookie 保活调度"
+        : "Cookie 保活已关闭",
+    !config.hasXueqiuCookie ? "未保存雪球 Cookie，雪球置顶/时间线/回溯会跳过" : "雪球抓取使用已保存 Cookie",
+    !config.hasWeiboCookie ? "未保存微博 Cookie，微博相关抓取会跳过" : "微博抓取使用已保存 Cookie",
     runtime.scheduleHint || `调度 ${formatAutoSchedulePolicy(config)}`,
     `月度指标 ${state.monthlyUpdates.length} 条`,
     issueRowCount > 0 ? `待复核 ${issueRowCount} 行` : "异常检查正常"
@@ -858,12 +998,13 @@ function renderSystemStatus() {
     els.systemCredentialStatus.textContent = credentialText;
     setStatusCardTone(
       els.systemCredentialStatus,
-      config.hasXueqiuCookie || config.hasWeiboCookie || config.hasQwenApiKey ? "tone-ok" : "tone-warn"
+      config.hasXueqiuCookie || config.hasWeiboCookie ? "tone-ok" : "tone-warn"
     );
   }
   if (els.systemLastError) {
-    els.systemLastError.textContent = runtime.lastError || "当前无错误记录";
-    setStatusCardTone(els.systemLastError, runtime.lastError ? "tone-err" : "tone-ok");
+    els.systemLastError.textContent =
+      runtime.lastError || runtime.lastCookieKeepAliveError || "当前无错误记录";
+    setStatusCardTone(els.systemLastError, runtime.lastError || runtime.lastCookieKeepAliveError ? "tone-err" : "tone-ok");
   }
 
   const cardMetaMap = new Map([
@@ -876,8 +1017,18 @@ function renderSystemStatus() {
     [els.systemSnapshotCount, `当前历史列表 ${state.snapshots.length} 条`],
     [els.systemImportedTrades, manualMetricCount > 0 ? `人工校正 ${manualMetricCount} 条` : "暂无人工校正记录"],
     [els.systemOcrStatus, config.ocrEnabled ? `每帖最多识别 ${Number(config.ocrMaxImagesPerPost) || 1} 张图片` : "当前不会执行 OCR"],
-    [els.systemCredentialStatus, `${Number(config.pinnedPostUrls?.length) || 0} 条置顶链接已配置`],
-    [els.systemLastError, runtime.lastError ? "建议检查 Cookie、标题规则或 OCR 结果" : "最近导入链路运行稳定"]
+    [
+      els.systemCredentialStatus,
+      config.hasXueqiuCookie || config.hasWeiboCookie
+        ? "Cookie 输入框留空时，系统会继续使用已保存值"
+        : "当前未保存 Cookie，对应站点抓取会自动跳过"
+    ],
+    [
+      els.systemLastError,
+      runtime.lastError || runtime.lastCookieKeepAliveError
+        ? "建议检查 Cookie、标题规则、OCR 结果或站点登录态"
+        : "最近导入链路与 Cookie 保活都比较稳定"
+    ]
   ]);
 
   for (const [element, text] of cardMetaMap.entries()) {
@@ -1470,11 +1621,13 @@ async function handleSaveConfig(event) {
   payload.enabled = String(payload.enabled) === "true";
   payload.smartScheduleEnabled = String(payload.smartScheduleEnabled) === "true";
   payload.skipStartupOutsideWindow = String(payload.skipStartupOutsideWindow) === "true";
+  payload.cookieKeepAliveEnabled = String(payload.cookieKeepAliveEnabled) === "true";
   payload.ocrEnabled = String(payload.ocrEnabled) === "true";
   payload.ocrProvider = String(payload.ocrProvider || "auto").trim();
   payload.intervalMinutes = Number(payload.intervalMinutes);
   payload.monthEndWindowDays = Number(payload.monthEndWindowDays);
   payload.offWindowIntervalHours = Number(payload.offWindowIntervalHours);
+  payload.cookieKeepAliveIntervalHours = Number(payload.cookieKeepAliveIntervalHours);
   payload.maxPostsPerSource = Number(payload.maxPostsPerSource);
   payload.ocrMaxImagesPerPost = Number(payload.ocrMaxImagesPerPost);
   payload.backfillMaxPages = Number(payload.backfillMaxPages);
@@ -1513,6 +1666,24 @@ async function handleSaveConfig(event) {
     setStatus("配置保存成功", "ok");
   } catch (error) {
     setStatus(`保存失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
+  }
+}
+
+async function handleRunCookieKeepAlive() {
+  try {
+    setActionBusy(true);
+    setStatus("正在执行 Cookie 保活...", "info");
+    const res = await request("/api/auto-tracking/cookie-keepalive", {
+      method: "POST"
+    });
+
+    await loadData();
+    const status = resolveCookieKeepAliveResultStatus(res?.result);
+    setStatus(status.text, status.level);
+  } catch (error) {
+    setStatus(`Cookie 保活失败: ${error.message}`, "err");
   } finally {
     setActionBusy(false);
   }
@@ -1911,6 +2082,10 @@ function bindEvents() {
 
   if (els.runAutoSyncBtn) {
     els.runAutoSyncBtn.addEventListener("click", handleRunNow);
+  }
+
+  if (els.runCookieKeepAliveBtn) {
+    els.runCookieKeepAliveBtn.addEventListener("click", handleRunCookieKeepAlive);
   }
 
   if (els.runBackfillBtn) {
