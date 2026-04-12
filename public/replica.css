@@ -666,8 +666,8 @@
 }
 
 .holdings-head {
-  align-items: center;
-  margin-bottom: 14px;
+  align-items: end;
+  margin-bottom: 12px;
 }
 
 .holdings-copy {
@@ -710,12 +710,12 @@
 }
 
 .holdings-view-toggle {
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid rgba(15, 23, 42, 0.06);
+  gap: 2px;
+  padding: 2px;
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(248, 250, 253, 0.96), rgba(243, 246, 251, 0.9));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  border-color: rgba(15, 23, 42, 0.05);
+  background: rgba(244, 247, 251, 0.9);
+  box-shadow: none;
   flex: 0 0 auto;
 }
 
@@ -725,12 +725,13 @@
 }
 
 .holdings-view-toggle .view-toggle-btn {
-  min-height: 30px;
-  padding: 0 11px;
+  min-height: 29px;
+  padding: 0 12px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: var(--font-weight-semibold);
   box-shadow: none;
+  color: var(--color-text-muted-3);
 }
 
 .holdings-view-toggle .view-toggle-btn:not(.active) {
@@ -739,8 +740,21 @@
   color: var(--color-text-muted-3);
 }
 
+.holdings-view-toggle .view-toggle-btn:not(.active):hover {
+  background: rgba(15, 23, 42, 0.04);
+  color: var(--color-text-subtle-strong);
+}
+
+.holdings-view-toggle .view-toggle-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
 .holdings-view-toggle .view-toggle-btn.active {
-  box-shadow: 0 4px 12px rgba(22, 119, 255, 0.12);
+  background: rgba(22, 119, 255, 0.12);
+  border-color: transparent;
+  color: var(--color-accent-strong);
+  box-shadow: none;
 }
 
 .content-shell,
@@ -762,9 +776,9 @@
 
 .holdings-shell .table-shell {
   border-radius: 16px;
-  border-color: rgba(15, 23, 42, 0.07);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 253, 0.92));
-  box-shadow: var(--shadow-card-elevated);
+  border-color: rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(249, 251, 254, 0.92));
+  box-shadow: none;
 }
 
 .table-shell::after {
@@ -1139,14 +1153,14 @@
 .holdings-shell .subsection-card {
   border: var(--border-soft);
   border-radius: 16px;
-  box-shadow: var(--shadow-card-elevated);
+  box-shadow: none;
 }
 
 .holdings-shell .subsection-header {
   min-height: auto;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
-  background: linear-gradient(180deg, rgba(250, 252, 255, 0.98), rgba(245, 248, 252, 0.94));
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.045);
+  background: rgba(248, 250, 253, 0.9);
 }
 
 .holdings-shell .subsection-kicker {
@@ -1184,7 +1198,7 @@
   border: var(--border-soft);
   border-radius: var(--radius-control);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 253, 0.94));
-  box-shadow: var(--shadow-card-elevated);
+  box-shadow: none;
 }
 
 .chart-summary-card-wide {
@@ -1221,9 +1235,9 @@
   min-height: 320px;
   border: var(--border-soft);
   border-radius: var(--radius-md);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 253, 0.95));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.975), rgba(247, 250, 253, 0.95));
   padding: 12px;
-  box-shadow: var(--shadow-card-elevated);
+  box-shadow: none;
 }
 
 .chart-empty {
