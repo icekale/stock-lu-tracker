@@ -781,6 +781,13 @@
   box-shadow: none;
 }
 
+.holdings-shell .table-shell,
+.holdings-shell .subsection-card,
+.chart-summary-card,
+.networth-canvas-wrap {
+  box-shadow: none;
+}
+
 .table-shell::after {
   content: "";
   position: absolute;
@@ -1153,6 +1160,8 @@
 .holdings-shell .subsection-card {
   border: var(--border-soft);
   border-radius: 16px;
+  border-color: rgba(15, 23, 42, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(249, 251, 254, 0.93));
   box-shadow: none;
 }
 
@@ -1197,7 +1206,8 @@
   padding: 13px 14px;
   border: var(--border-soft);
   border-radius: var(--radius-control);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 253, 0.94));
+  border-color: rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.94);
   box-shadow: none;
 }
 
@@ -1235,6 +1245,7 @@
   min-height: 320px;
   border: var(--border-soft);
   border-radius: var(--radius-md);
+  border-color: rgba(15, 23, 42, 0.06);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.975), rgba(247, 250, 253, 0.95));
   padding: 12px;
   box-shadow: none;
