@@ -1652,6 +1652,7 @@
   .dashboard-shell-top {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
   }
 
   .dashboard-shell-top,
@@ -1674,10 +1675,16 @@
     display: flex;
     align-items: flex-start;
     flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
   }
 
   .section-head::after {
     display: none;
+  }
+
+  .holdings-head {
+    gap: 10px;
   }
 
   .section-head > :first-child,
@@ -1710,6 +1717,11 @@
     padding-bottom: 2px;
   }
 
+  .section-head-tools {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .holdings-toolbar {
     width: 100%;
     justify-content: flex-start;
@@ -1734,14 +1746,15 @@
 
 @media (max-width: 720px) {
   .page-main {
-    padding-top: 18px;
+    padding-top: 16px;
+    padding-bottom: 24px;
   }
 
   .dashboard-shell,
   .content-shell,
   .chart-shell,
   .detail-list-shell {
-    padding: var(--panel-padding-md);
+    padding: 18px;
   }
 
   .detail-insight-grid,
@@ -1752,7 +1765,7 @@
 
   .overview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
   }
 
   .overview-card {
@@ -1783,6 +1796,14 @@
     grid-column: span 1;
   }
 
+  .chart-summary-row {
+    gap: 10px;
+  }
+
+  .chart-summary-card {
+    padding: 12px 13px;
+  }
+
   .dashboard-shell-top {
     gap: 14px;
     margin-bottom: 16px;
@@ -1804,7 +1825,7 @@
   }
 
   .dashboard-inline-meta {
-    gap: 8px;
+    gap: 6px;
   }
 
   .month-chip-btn,

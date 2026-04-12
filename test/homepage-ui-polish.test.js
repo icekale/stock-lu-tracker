@@ -17,6 +17,23 @@ test("home page exposes hierarchy hooks for the overview and section headers", (
   assert.match(html, /<div class="detail-head-copy section-head-main">/);
 });
 
+test("responsive rules recompose section rhythm and controls at tablet widths", () => {
+  const css = read("public/replica.css");
+
+  assert.match(css, /@media \(max-width: 960px\)\s*\{[\s\S]*\.dashboard-shell-top\s*\{[\s\S]*gap:\s*12px;/is);
+  assert.match(css, /@media \(max-width: 960px\)\s*\{[\s\S]*\.holdings-head\s*\{[\s\S]*gap:\s*10px;/is);
+  assert.match(css, /@media \(max-width: 960px\)\s*\{[\s\S]*\.section-head-tools\s*\{[\s\S]*width:\s*100%;[\s\S]*justify-content:\s*flex-start;/is);
+});
+
+test("mobile rules preserve density while tightening spacing", () => {
+  const css = read("public/replica.css");
+
+  assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*\.page-main\s*\{[\s\S]*padding-top:\s*16px;/is);
+  assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*\.overview-grid\s*\{[\s\S]*gap:\s*8px;/is);
+  assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*\.dashboard-inline-meta\s*\{[\s\S]*gap:\s*6px;/is);
+  assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*\.chart-summary-row\s*\{[\s\S]*gap:\s*10px;/is);
+});
+
 test("overview shell and lead metric use the refined hierarchy rules", () => {
   const css = read("public/replica.css");
 
