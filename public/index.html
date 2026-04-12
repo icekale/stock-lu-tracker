@@ -73,7 +73,7 @@
           </div>
 
           <div class="overview-grid" aria-label="总览统计">
-            <article class="layui-card overview-card">
+            <article class="layui-card overview-card overview-card-primary">
               <div class="layui-card-body">
                 <p class="metric-label">总市值</p>
                 <p class="metric-value metric-value-display" id="totalMarketValue">-</p>
@@ -117,13 +117,13 @@
 
         <section class="layui-panel content-shell holdings-shell">
           <header class="section-head holdings-head">
-            <div class="holdings-copy">
+            <div class="holdings-copy section-head-main">
               <p class="section-eyebrow">Holdings & Adjustments</p>
               <h2 class="section-title">持仓与调仓</h2>
               <p class="section-meta" id="selectedSnapshotMeta">-</p>
             </div>
 
-            <div class="holdings-toolbar">
+            <div class="holdings-toolbar section-head-tools">
               <div class="view-toggle holdings-view-toggle" role="tablist" aria-label="持仓视图">
               <button
                 id="tabLatestBtn"
@@ -239,7 +239,7 @@
 
         <section class="layui-panel chart-shell">
           <header class="section-head chart-head">
-            <div>
+            <div class="chart-head-copy section-head-main">
               <p class="section-eyebrow">Monthly Net Worth</p>
               <h2 class="section-title">月度净值曲线</h2>
               <p class="section-meta">优先使用帖子中的累积净值，其次回退到持仓市值。</p>
@@ -268,7 +268,7 @@
 
         <section class="layui-panel detail-list-shell">
           <header class="section-head detail-list-head">
-            <div>
+            <div class="detail-head-copy section-head-main">
               <p class="section-eyebrow">Snapshot Detail</p>
               <h2 class="section-title">月度详情列表</h2>
               <p id="detailListMeta" class="section-meta">按月份与日期展开查看原帖、截图与 OCR 依据</p>
