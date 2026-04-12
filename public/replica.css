@@ -713,7 +713,7 @@
   gap: 2px;
   padding: 2px;
   border-radius: 999px;
-  border-color: rgba(15, 23, 42, 0.05);
+  border: 1px solid rgba(15, 23, 42, 0.05);
   background: rgba(244, 247, 251, 0.9);
   box-shadow: none;
   flex: 0 0 auto;
@@ -743,6 +743,10 @@
 .holdings-view-toggle .view-toggle-btn:not(.active):hover {
   background: rgba(15, 23, 42, 0.04);
   color: var(--color-text-subtle-strong);
+}
+
+.holdings-view-toggle .view-toggle-btn:hover {
+  transform: none;
 }
 
 .holdings-view-toggle .view-toggle-btn:focus-visible {

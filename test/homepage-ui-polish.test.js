@@ -33,6 +33,8 @@ test("holdings controls use quiet but clear interaction states", () => {
   assert.match(css, /\.holdings-view-toggle\s+\.view-toggle-btn:not\(\.active\):hover\s*\{[^}]*background:\s*rgba\(15,\s*23,\s*42,\s*0\.04\);[^}]*color:\s*var\(--color-text-subtle-strong\);/is);
   assert.match(css, /\.holdings-view-toggle\s+\.view-toggle-btn\.active\s*\{[^}]*background:\s*rgba\(22,\s*119,\s*255,\s*0\.12\);[^}]*box-shadow:\s*none;/is);
   assert.match(css, /\.holdings-view-toggle\s+\.view-toggle-btn:focus-visible\s*\{[^}]*box-shadow:\s*var\(--shadow-focus-ring\);/is);
+  assert.match(css, /\.holdings-view-toggle\s*\{[^}]*border:\s*1px\s+solid\s+rgba\(15,\s*23,\s*42,\s*0\.05\);/is);
+  assert.match(css, /\.holdings-view-toggle\s+\.view-toggle-btn:hover\s*\{[^}]*transform:\s*none;/is);
 });
 
 test("secondary shells use restrained surfaces instead of stacked card depth", () => {
