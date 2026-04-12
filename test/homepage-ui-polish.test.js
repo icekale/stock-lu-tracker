@@ -50,10 +50,20 @@ test("tablet-only `(min-width: 721px)` rules keep section heads flexy", () => {
 test("overview shell and lead metric use the refined hierarchy rules", () => {
   const css = read("public/replica.css");
 
-  assert.match(css, /\.page-shell-home\s*\{[^}]*gap:\s*24px;/is);
+  assert.match(css, /\.page-shell-home\s*\{[^}]*gap:\s*28px;/is);
+  assert.match(css, /\.overview-grid\s*\{[^}]*grid-template-columns:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\);/is);
+  assert.match(css, /\.overview-card-primary\s*\{[^}]*grid-column:\s*span\s*2;/is);
   assert.match(css, /\.section-head-main\s*\{[^}]*display:\s*grid;/is);
   assert.match(css, /\.section-head-tools\s*\{[^}]*display:\s*flex;/is);
-  assert.match(css, /\.overview-card-primary\s+\.metric-value\s*\{[^}]*font-size:\s*clamp\(1\.24rem,\s*1\.32vw,\s*1\.46rem\);/is);
+  assert.match(css, /\.overview-card-primary\s+\.metric-value\s*\{[^}]*font-size:\s*clamp\(1\.38rem,\s*1\.48vw,\s*1\.62rem\);/is);
+});
+
+test("section headers and summary rows use stronger but still restrained grouping", () => {
+  const css = read("public/replica.css");
+
+  assert.match(css, /\.section-head\s*\{[^}]*gap:\s*14px;[^}]*margin-bottom:\s*16px;[^}]*padding-bottom:\s*14px;/is);
+  assert.match(css, /\.holdings-shell\s*\{[^}]*padding-top:\s*24px;[^}]*padding-bottom:\s*24px;/is);
+  assert.match(css, /\.chart-summary-row\s*\{[^}]*gap:\s*14px;[^}]*margin-bottom:\s*16px;/is);
 });
 
 test("holdings controls use quiet but clear interaction states", () => {

@@ -835,11 +835,7 @@ function parsePostMetrics(snapshot) {
   };
 }
 
-function resolveSnapshotMarketValue(snapshot, rows = null, postMetrics = parsePostMetrics(snapshot)) {
-  if (postMetrics.cumulativeNetValue !== null) {
-    return postMetrics.cumulativeNetValue;
-  }
-
+function resolveSnapshotPortfolioMarketValue(snapshot, rows = null) {
   const refValue = parseReferenceStockValue(snapshot);
   if (refValue !== null) {
     return refValue;
@@ -850,6 +846,14 @@ function resolveSnapshotMarketValue(snapshot, rows = null, postMetrics = parsePo
   }
 
   return snapshotMarketValueFromRows(snapshot);
+}
+
+function resolveSnapshotChartValue(snapshot, rows = null, postMetrics = parsePostMetrics(snapshot)) {
+  if (postMetrics.cumulativeNetValue !== null) {
+    return postMetrics.cumulativeNetValue;
+  }
+
+  return resolveSnapshotPortfolioMarketValue(snapshot, rows);
 }
 
 function buildRenderPayload() {
@@ -863,8 +867,8 @@ function buildRenderPayload() {
   const closeRows = buildCloseRows(currentRows, prevMap);
   const currentPostMetrics = parsePostMetrics(current);
   const previousPostMetrics = parsePostMetrics(previous);
-  const currentMarketValue = resolveSnapshotMarketValue(current, currentRows, currentPostMetrics);
-  const previousMarketValue = resolveSnapshotMarketValue(previous, previousRows, previousPostMetrics);
+  const currentMarketValue = resolveSnapshotPortfolioMarketValue(current, currentRows);
+  const previousMarketValue = resolveSnapshotPortfolioMarketValue(previous, previousRows);
 
   return {
     current,
@@ -1487,7 +1491,7 @@ function buildMonthlySeries() {
   for (const snapshot of state.snapshots) {
     const month = monthLabel(snapshot);
     const postMetrics = parsePostMetrics(snapshot);
-    const value = resolveSnapshotMarketValue(snapshot, null, postMetrics);
+    const value = resolveSnapshotChartValue(snapshot, null, postMetrics);
     if (!month || month === "-" || !Number.isFinite(value) || value <= 0) {
       continue;
     }
@@ -1865,10 +1869,7 @@ function renderOverviewStats(payload) {
   }
 
   if (els.cumulativeNetValue) {
-    els.cumulativeNetValue.textContent = formatCurrency(
-      payload.currentPostMetrics?.cumulativeNetValue ?? payload.currentMarketValue,
-      0
-    );
+    els.cumulativeNetValue.textContent = formatCurrency(payload.currentPostMetrics?.cumulativeNetValue, 0);
   }
 
   if (els.netIndexValue) {
