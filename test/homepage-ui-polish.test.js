@@ -34,6 +34,19 @@ test("mobile rules preserve density while tightening spacing", () => {
   assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*\.chart-summary-row\s*\{[\s\S]*gap:\s*10px;/is);
 });
 
+test("tablet-only `(min-width: 721px)` rules keep section heads flexy", () => {
+  const css = read("public/replica.css");
+
+  assert.match(
+    css,
+    /@media \(min-width: 721px\) and \(max-width: 960px\)\s*\{[\s\S]*\.section-head\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;[\s\S]*gap:\s*10px;[\s\S]*margin-bottom:\s*12px;/is
+  );
+  assert.match(
+    css,
+    /@media \(min-width: 721px\) and \(max-width: 960px\)\s*\{[\s\S]*\.section-head::after\s*\{[\s\S]*display:\s*none;/is
+  );
+});
+
 test("overview shell and lead metric use the refined hierarchy rules", () => {
   const css = read("public/replica.css");
 
