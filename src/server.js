@@ -92,6 +92,19 @@ function createHttpError(status, message) {
   return error;
 }
 
+function setNoStoreHeaders(res) {
+  res.set("Cache-Control", "no-store, max-age=0");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+}
+
+function setPublicAssetCacheHeaders(res, filePath) {
+  const normalizedPath = String(filePath || "").replace(/\\/g, "/");
+  if (normalizedPath.endsWith(".html") || normalizedPath.endsWith("/site-footer.js")) {
+    setNoStoreHeaders(res);
+  }
+}
+
 function parseCookies(cookieHeader) {
   const cookies = {};
   const raw = String(cookieHeader || "");
@@ -602,6 +615,7 @@ app.post("/api/admin-auth/logout", (_req, res) => {
 });
 
 app.get("/admin.html", requireAdminAuth, (_req, res) => {
+  setNoStoreHeaders(res);
   res.sendFile(path.join(process.cwd(), "public", "admin.html"));
 });
 
@@ -616,7 +630,11 @@ app.use("/api/snapshots", requireAdminAuth);
 app.use("/api/monthly-updates", requireAdminAuth);
 app.use("/api/auto-tracking", requireAdminAuth);
 app.use("/vendor/layui", express.static(path.join(process.cwd(), "node_modules", "layui", "dist")));
-app.use(express.static(path.join(process.cwd(), "public")));
+app.use(
+  express.static(path.join(process.cwd(), "public"), {
+    setHeaders: setPublicAssetCacheHeaders
+  })
+);
 
 function pushSnapshot(store, source = "manual") {
   const { summary } = buildPortfolio(store.trades, store.quotes);
@@ -2118,6 +2136,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/app-meta", (_req, res) => {
+  setNoStoreHeaders(res);
   res.json(APP_META);
 });
 
