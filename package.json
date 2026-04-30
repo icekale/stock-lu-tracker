@@ -1,6 +1,6 @@
 {
   "name": "stock-lu-tracker",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "Local stock portfolio tracker with month-end update workflow.",
   "main": "src/server.js",
   "scripts": {

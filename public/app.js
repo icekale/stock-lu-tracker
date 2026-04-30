@@ -709,6 +709,20 @@ function parseYearStartIndex(text) {
   return value;
 }
 
+function parseYearStartNetValue(text) {
+  const normalized = normalizeStatsText(text);
+  if (!normalized) {
+    return null;
+  }
+
+  const matched = normalized.match(/(?:相比)?(?:本年初|年初)\s*([0-9]+(?:\.[0-9]+)?)\s*([Ww万亿]?)/);
+  const value = toYuanByUnit(matched?.[1], matched?.[2], matched?.[0]);
+  if (value === null || value < 1_000_000 || value > 500_000_000) {
+    return null;
+  }
+  return value;
+}
+
 function parseNetIndex(text) {
   const normalized = normalizeStatsText(text);
   if (!normalized) {
@@ -727,6 +741,28 @@ function parseNetIndex(text) {
     return null;
   }
   return value;
+}
+
+function deriveCurrentNetIndex(cumulativeNetValue, yearStartNetValue, yearStartNetIndex) {
+  const currentValue = toNumber(cumulativeNetValue);
+  const startValue = toNumber(yearStartNetValue);
+  const startIndex = toNumber(yearStartNetIndex);
+  if (currentValue === null || startValue === null || startIndex === null) {
+    return null;
+  }
+  if (currentValue <= 0 || startValue <= 0 || startIndex <= 0) {
+    return null;
+  }
+  return currentValue / startValue * startIndex;
+}
+
+function roundMetricValue(value, digits = 4) {
+  const number = toNumber(value);
+  if (number === null) {
+    return null;
+  }
+  const factor = 10 ** digits;
+  return Math.round(number * factor) / factor;
 }
 
 function toSignedPercentByDirection(directionText, valueText) {
@@ -824,14 +860,19 @@ function parsePostMetrics(snapshot) {
 
   const cumulativeNetValue =
     explicitCumulativeNetValue ?? parseCumulativeNetValue(primaryText) ?? parseCumulativeNetValue(mergedText);
-  const netIndex = explicitNetIndex ?? parseNetIndex(primaryText) ?? parseNetIndex(mergedText);
   const yearStartNetIndex =
-    explicitYearStartNetIndex ?? parseYearStartIndex(primaryText) ?? parseYearStartIndex(mergedText);
+    explicitYearStartNetIndex ?? parseYearStartIndex(primaryText) ?? parseYearStartIndex(mergedText) ?? 10.023;
+  const yearStartNetValue = parseYearStartNetValue(primaryText) ?? parseYearStartNetValue(mergedText);
+  const netIndex =
+    explicitNetIndex ??
+    parseNetIndex(primaryText) ??
+    parseNetIndex(mergedText) ??
+    deriveCurrentNetIndex(cumulativeNetValue, yearStartNetValue, yearStartNetIndex);
 
   return {
     cumulativeNetValue,
-    netIndex,
-    yearStartNetIndex
+    netIndex: roundMetricValue(netIndex, 4),
+    yearStartNetIndex: roundMetricValue(yearStartNetIndex, 4)
   };
 }
 

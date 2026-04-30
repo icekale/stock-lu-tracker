@@ -182,3 +182,23 @@ test("monthly chart series still prefers cumulative net value when it exists", (
     ]
   );
 });
+
+test("post metrics derive current index from current and year-start net values", () => {
+  const app = loadHomeAppModule();
+  const snapshot = createSnapshot({
+    cumulativeNetValue: 19_892_000,
+    netIndex: null,
+    yearStartNetIndex: null,
+    rawText:
+      "本游戏仓4月收盘1989.2W，相比本年初1762.5W，本年盈利金额226.7W，盈利12.86%。",
+    ocrText: ""
+  });
+
+  app.state.snapshots = [snapshot];
+  app.state.selectedSnapshotId = snapshot.id;
+
+  const payload = app.buildRenderPayload();
+
+  assert.equal(payload.currentPostMetrics.yearStartNetIndex, 10.023);
+  assert.equal(payload.currentPostMetrics.netIndex, 11.3122);
+});

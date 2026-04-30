@@ -112,6 +112,21 @@ function parseYearStartIndex(text) {
   return value;
 }
 
+function parseYearStartNetValue(text) {
+  const normalized = normalizeStatsText(text);
+  if (!normalized) {
+    return null;
+  }
+
+  const matched = normalized.match(/(?:相比)?(?:本年初|年初)\s*([0-9]+(?:\.[0-9]+)?)\s*([Ww万亿]?)/);
+  const value = toYuanByUnit(matched?.[1], matched?.[2], matched?.[0]);
+  if (value === null || value < 1_000_000 || value > 500_000_000) {
+    return null;
+  }
+
+  return value;
+}
+
 function parseNetIndex(text) {
   const normalized = normalizeStatsText(text);
   if (!normalized) {
@@ -147,6 +162,20 @@ function readPositiveMetricValue(primary, secondary) {
   return null;
 }
 
+function deriveCurrentNetIndex(cumulativeNetValue, yearStartNetValue, yearStartNetIndex) {
+  const currentValue = toNumber(cumulativeNetValue);
+  const startValue = toNumber(yearStartNetValue);
+  const startIndex = toNumber(yearStartNetIndex);
+  if (currentValue === null || startValue === null || startIndex === null) {
+    return null;
+  }
+  if (currentValue <= 0 || startValue <= 0 || startIndex <= 0) {
+    return null;
+  }
+
+  return (currentValue / startValue) * startIndex;
+}
+
 function extractSnapshotPostMetrics(snapshot) {
   if (!snapshot) {
     return {
@@ -162,28 +191,29 @@ function extractSnapshotPostMetrics(snapshot) {
   const primaryText = rawText || mergedText;
   const override = POST_METRIC_OVERRIDES[String(snapshot.postId || "").trim()] || {};
 
-  return {
-    cumulativeNetValue:
+  const cumulativeNetValue =
       readPositiveMetricValue(manual.cumulativeNetValue, snapshot.cumulativeNetValue) ??
       readPositiveMetricValue(snapshot.cumulativeNetValue, override.cumulativeNetValue) ??
       parseCumulativeNetValue(primaryText) ??
-      parseCumulativeNetValue(mergedText),
-    netIndex:
-      roundNumeric(
-        readPositiveMetricValue(manual.netIndex, snapshot.netIndex) ??
-          readPositiveMetricValue(snapshot.netIndex, override.netIndex) ??
-          parseNetIndex(primaryText) ??
-          parseNetIndex(mergedText),
-        4
-      ),
-    yearStartNetIndex:
-      roundNumeric(
-        readPositiveMetricValue(manual.yearStartNetIndex, snapshot.yearStartNetIndex) ??
-          readPositiveMetricValue(snapshot.yearStartNetIndex, override.yearStartNetIndex) ??
-          parseYearStartIndex(primaryText) ??
-          parseYearStartIndex(mergedText),
-        4
-      )
+      parseCumulativeNetValue(mergedText);
+  const yearStartNetIndex =
+    readPositiveMetricValue(manual.yearStartNetIndex, snapshot.yearStartNetIndex) ??
+    readPositiveMetricValue(snapshot.yearStartNetIndex, override.yearStartNetIndex) ??
+    parseYearStartIndex(primaryText) ??
+    parseYearStartIndex(mergedText) ??
+    10.023;
+  const yearStartNetValue = parseYearStartNetValue(primaryText) ?? parseYearStartNetValue(mergedText);
+  const netIndex =
+    readPositiveMetricValue(manual.netIndex, snapshot.netIndex) ??
+    readPositiveMetricValue(snapshot.netIndex, override.netIndex) ??
+    parseNetIndex(primaryText) ??
+    parseNetIndex(mergedText) ??
+    deriveCurrentNetIndex(cumulativeNetValue, yearStartNetValue, yearStartNetIndex);
+
+  return {
+    cumulativeNetValue,
+    netIndex: roundNumeric(netIndex, 4),
+    yearStartNetIndex: roundNumeric(yearStartNetIndex, 4)
   };
 }
 
