@@ -14,7 +14,10 @@ const state = {
   anomalyRowsByKey: new Map(),
   anomalyLoading: false,
   actionBusy: false,
-  loadVersion: 0
+  loadVersion: 0,
+  jobOverview: null,
+  jobPollTimer: null,
+  adminSection: "overview"
 };
 
 const els = {
@@ -56,8 +59,41 @@ const els = {
   monthlyMetricToolbarText: document.getElementById("monthlyMetricToolbarText"),
   monthlyMetricFilters: document.getElementById("monthlyMetricFilters"),
   saveAllMetricsBtn: document.getElementById("saveAllMetricsBtn"),
-  discardAllMetricsBtn: document.getElementById("discardAllMetricsBtn")
+  discardAllMetricsBtn: document.getElementById("discardAllMetricsBtn"),
+  jobStatusCard: document.getElementById("jobStatusCard"),
+  jobStatusTitle: document.getElementById("jobStatusTitle"),
+  jobStatusSummary: document.getElementById("jobStatusSummary"),
+  jobStatusProgress: document.getElementById("jobStatusProgress"),
+  jobStatusMeta: document.getElementById("jobStatusMeta")
 };
+
+const ADMIN_SECTIONS = new Set(["overview", "config", "tasks", "review", "metrics"]);
+
+function setAdminSection(section) {
+  const nextSection = ADMIN_SECTIONS.has(section) ? section : "overview";
+  state.adminSection = nextSection;
+
+  for (const button of document.querySelectorAll("[data-admin-section]")) {
+    const active = button.getAttribute("data-admin-section") === nextSection;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  }
+
+  for (const panel of document.querySelectorAll("[data-admin-panel]")) {
+    const active = panel.getAttribute("data-admin-panel") === nextSection;
+    panel.classList.toggle("is-active", active);
+    panel.hidden = !active;
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set("section", nextSection);
+  window.history.replaceState({}, "", url.toString());
+}
+
+function initAdminSectionFromUrl() {
+  const url = new URL(window.location.href);
+  setAdminSection(url.searchParams.get("section") || "overview");
+}
 
 const MONTHLY_METRIC_FIELDS = Object.freeze([
   {
@@ -1481,6 +1517,86 @@ function renderMonthlyMetrics() {
   els.monthlyMetricBody.innerHTML = rows;
 }
 
+function formatJobStatusText(job) {
+  if (!job) {
+    return "当前没有运行任务";
+  }
+  if (job.status === "running") {
+    return `${job.label || "任务"} · 执行中`;
+  }
+  if (job.status === "failed") {
+    return `${job.label || "任务"} · 失败`;
+  }
+  if (job.skipped) {
+    return `${job.label || "任务"} · 已跳过`;
+  }
+  return `${job.label || "任务"} · 已完成`;
+}
+
+function renderJobStatus(overview) {
+  const running = overview?.running || null;
+  const recent = Array.isArray(overview?.recent) ? overview.recent[0] : null;
+  const job = running || recent || null;
+  const progress = Math.max(0, Math.min(100, Number(job?.progress) || 0));
+
+  if (els.jobStatusTitle) {
+    els.jobStatusTitle.textContent = formatJobStatusText(job);
+  }
+  if (els.jobStatusSummary) {
+    els.jobStatusSummary.textContent = job?.message || "点击抓取、回溯或保活后，这里会显示执行阶段和结果。";
+  }
+  if (els.jobStatusProgress) {
+    els.jobStatusProgress.setAttribute("aria-valuenow", String(progress));
+    const bar = els.jobStatusProgress.querySelector("span");
+    if (bar) {
+      bar.style.width = `${progress}%`;
+    }
+  }
+  if (els.jobStatusMeta) {
+    els.jobStatusMeta.textContent = job
+      ? `阶段：${job.stage || "-"} · 状态：${job.status || "-"}`
+      : "等待任务";
+  }
+  if (els.jobStatusCard) {
+    els.jobStatusCard.classList.toggle("is-running", Boolean(running));
+    els.jobStatusCard.classList.toggle("is-failed", job?.status === "failed");
+  }
+}
+
+async function loadJobOverview({ silent = false } = {}) {
+  try {
+    const overview = await request("/api/jobs/overview");
+    state.jobOverview = overview;
+    renderJobStatus(overview);
+    if (overview?.running) {
+      startJobPolling();
+    } else {
+      stopJobPolling();
+    }
+  } catch (error) {
+    if (!silent) {
+      setStatus(`任务状态读取失败：${error.message}`, "error");
+    }
+  }
+}
+
+function startJobPolling() {
+  if (state.jobPollTimer) {
+    return;
+  }
+  state.jobPollTimer = window.setInterval(() => {
+    loadJobOverview({ silent: true });
+  }, 1500);
+}
+
+function stopJobPolling() {
+  if (!state.jobPollTimer) {
+    return;
+  }
+  window.clearInterval(state.jobPollTimer);
+  state.jobPollTimer = null;
+}
+
 function renderAll() {
   renderForm();
   renderSystemStatus();
@@ -1680,6 +1796,7 @@ async function handleRunCookieKeepAlive() {
     });
 
     await loadData();
+    await loadJobOverview({ silent: true });
     const status = resolveCookieKeepAliveResultStatus(res?.result);
     setStatus(status.text, status.level);
   } catch (error) {
@@ -1698,6 +1815,7 @@ async function handleRunNow() {
     });
 
     await loadData();
+    await loadJobOverview({ silent: true });
     const status = resolveAutoTrackingResultStatus(res?.result, "抓取");
     setStatus(status.text, status.level);
   } catch (error) {
@@ -1723,6 +1841,7 @@ async function handleRunBackfill() {
     });
 
     await loadData();
+    await loadJobOverview({ silent: true });
     const status = resolveAutoTrackingResultStatus(res?.result, "回溯");
     setStatus(status.text, status.level);
   } catch (error) {
@@ -1772,6 +1891,7 @@ async function handleImportSelected() {
     });
 
     await loadData();
+    await loadJobOverview({ silent: true });
     if (state.catalogPosts.length > 0) {
       await fetchCatalog({ silent: true });
     }
@@ -1793,6 +1913,7 @@ async function handleRecalculateSnapshots() {
       method: "POST"
     });
     await loadData();
+    await loadJobOverview({ silent: true });
     const changedSnapshots = Number(res?.summary?.changedSnapshotCount) || 0;
     const changedRows = Number(res?.summary?.changedRowCount) || 0;
     const issueRows = Number(res?.summary?.issueRowCount) || 0;
@@ -2076,6 +2197,12 @@ function handleMonthlyMetricFilterClick(event) {
 }
 
 function bindEvents() {
+  for (const button of document.querySelectorAll("[data-admin-section]")) {
+    button.addEventListener("click", () => {
+      setAdminSection(button.getAttribute("data-admin-section") || "overview");
+    });
+  }
+
   if (els.autoConfigForm) {
     els.autoConfigForm.addEventListener("submit", handleSaveConfig);
   }
@@ -2149,8 +2276,10 @@ function bindEvents() {
 
 async function bootstrap() {
   bindEvents();
+  initAdminSectionFromUrl();
   try {
     await loadData();
+    await loadJobOverview({ silent: true });
   } catch (error) {
     setStatus(`加载失败: ${error.message}`, "err");
   }
