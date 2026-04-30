@@ -20,7 +20,7 @@ test("auto tracking actions create and finish observable jobs", () => {
   const server = read("src/server.js");
 
   assert.match(server, /const job = createJob\("auto_tracking_run"/);
-  assert.match(server, /startJob\(job\.jobId, \{ stage: "collect"/);
+  assert.match(server, /startJob\(job\.jobId,\s*\{[\s\S]*stage: "collect"/);
   assert.match(server, /finishJob\(job\.jobId, \{[\s\S]*summarizeAutoTrackingResult\(result\)/);
   assert.match(server, /failJob\(job\.jobId, error/);
   assert.match(server, /const job = createJob\("cookie_keepalive"/);
@@ -33,4 +33,13 @@ test("server exposes direct post URL import as an observable job", () => {
   assert.match(server, /createJob\("auto_tracking_import_post_url"/);
   assert.match(server, /targetPostIds:\s*postIds/);
   assert.match(server, /forceRefresh:\s*true/);
+});
+
+test("scheduled and startup auto tracking are surfaced as observable jobs", () => {
+  const server = read("src/server.js");
+
+  assert.match(server, /async function runAutoTrackingWithJob\(trigger = "manual", collectOptions = \{\}, jobOptions = \{\}\)/);
+  assert.match(server, /runAutoTrackingWithJob\("timer"/);
+  assert.match(server, /runAutoTrackingWithJob\("startup"/);
+  assert.match(server, /const \{ result, job \} = await runAutoTrackingWithJob\("manual"/);
 });

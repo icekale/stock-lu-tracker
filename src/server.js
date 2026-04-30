@@ -1683,7 +1683,11 @@ async function scheduleAutoTracking() {
 
   autoTrackingTimer = setTimeout(() => {
     autoTrackingTimer = null;
-    runAutoTrackingJob("timer").catch((error) => {
+    runAutoTrackingWithJob("timer", {}, {
+      label: "定时抓取",
+      startMessage: "定时任务正在抓取最新帖子",
+      successMessage: "定时抓取完成"
+    }).catch((error) => {
       console.error("Auto tracking timer error:", error.message);
     });
   }, schedule.delayMs);
@@ -1991,6 +1995,45 @@ async function runAutoTrackingJob(trigger = "manual", collectOptions = {}) {
     } catch (scheduleError) {
       console.error("Auto tracking reschedule error:", scheduleError.message);
     }
+  }
+}
+
+async function runAutoTrackingWithJob(trigger = "manual", collectOptions = {}, jobOptions = {}) {
+  const job = createJob("auto_tracking_run", {
+    label: jobOptions.label || "自动抓取"
+  });
+
+  try {
+    startJob(job.jobId, {
+      stage: "collect",
+      progress: 10,
+      message: jobOptions.startMessage || "正在抓取最新帖子"
+    });
+
+    const result = await runAutoTrackingJob(trigger, collectOptions);
+
+    if (result.skipped) {
+      skipJob(job.jobId, result.reason || "任务已跳过");
+    } else if (result.ok) {
+      finishJob(job.jobId, {
+        summary: summarizeAutoTrackingResult(result),
+        logs: result.logs,
+        message: jobOptions.successMessage || "抓取完成"
+      });
+    } else {
+      failJob(job.jobId, new Error(result.error || result.reason || "抓取失败"), {
+        stage: "collect",
+        summary: summarizeAutoTrackingResult(result)
+      });
+    }
+
+    return {
+      result,
+      job: getJob(job.jobId)
+    };
+  } catch (error) {
+    failJob(job.jobId, error, { stage: "collect" });
+    throw error;
   }
 }
 
@@ -2600,36 +2643,22 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
 });
 
 app.post("/api/auto-tracking/run", async (_req, res, next) => {
-  const job = createJob("auto_tracking_run", { label: "立即抓取" });
   try {
-    startJob(job.jobId, { stage: "collect", progress: 10, message: "正在抓取最新帖子" });
-    const result = await runAutoTrackingJob("manual");
+    const { result, job } = await runAutoTrackingWithJob("manual", {}, {
+      label: "立即抓取",
+      startMessage: "正在抓取最新帖子",
+      successMessage: "抓取完成"
+    });
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
 
-    if (result.skipped) {
-      skipJob(job.jobId, result.reason || "任务已跳过");
-    } else if (result.ok) {
-      finishJob(job.jobId, {
-        summary: summarizeAutoTrackingResult(result),
-        logs: result.logs,
-        message: "抓取完成"
-      });
-    } else {
-      failJob(job.jobId, new Error(result.error || result.reason || "抓取失败"), {
-        stage: "collect",
-        summary: summarizeAutoTrackingResult(result)
-      });
-    }
-
     res.json({
-      job: getJob(job.jobId),
+      job,
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
-    failJob(job.jobId, error, { stage: "collect" });
     next(error);
   }
 });
@@ -2674,43 +2703,29 @@ app.post("/api/auto-tracking/cookie-keepalive", async (_req, res, next) => {
   }
 });
 app.post("/api/auto-tracking/backfill", async (req, res, next) => {
-  const job = createJob("auto_tracking_backfill", { label: "历史回溯" });
   try {
     const { pages, pageSize } = normalizeBackfillInput(req.body || {});
 
-    startJob(job.jobId, { stage: "collect", progress: 10, message: "正在回溯历史帖子" });
-    const result = await runAutoTrackingJob("backfill", {
+    const { result, job } = await runAutoTrackingWithJob("backfill", {
       mode: "backfill",
       backfillPages: pages,
       backfillPageSize: pageSize
+    }, {
+      label: "历史回溯",
+      startMessage: "正在回溯历史帖子",
+      successMessage: "历史回溯完成"
     });
 
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
 
-    if (result.skipped) {
-      skipJob(job.jobId, result.reason || "历史回溯已跳过");
-    } else if (result.ok) {
-      finishJob(job.jobId, {
-        summary: summarizeAutoTrackingResult(result),
-        logs: result.logs,
-        message: "历史回溯完成"
-      });
-    } else {
-      failJob(job.jobId, new Error(result.error || result.reason || "历史回溯失败"), {
-        stage: "collect",
-        summary: summarizeAutoTrackingResult(result)
-      });
-    }
-
     res.json({
-      job: getJob(job.jobId),
+      job,
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
-    failJob(job.jobId, error, { stage: "collect" });
     next(error);
   }
 });
@@ -2767,13 +2782,14 @@ app.post("/api/auto-tracking/catalog", async (req, res, next) => {
 
 
 app.post("/api/auto-tracking/import-post-url", async (req, res, next) => {
-  const job = createJob("auto_tracking_import_post_url", { label: "导入指定帖子" });
+  let job = null;
   try {
     const { postIds } = normalizeSelectedImportInput({ postIds: [req.body?.postUrl || req.body?.url || req.body?.postId] });
     if (postIds.length === 0) {
       throw createHttpError(400, "请输入有效的雪球帖子链接或帖子 ID");
     }
 
+    job = createJob("auto_tracking_import_post_url", { label: "导入指定帖子" });
     startJob(job.jobId, { stage: "import", progress: 10, message: "正在导入指定帖子" });
     const result = await runAutoTrackingJob("import_post_url", {
       mode: "backfill",
@@ -2814,19 +2830,22 @@ app.post("/api/auto-tracking/import-post-url", async (req, res, next) => {
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
-    failJob(job.jobId, error, { stage: "import" });
+    if (job) {
+      failJob(job.jobId, error, { stage: "import" });
+    }
     next(error);
   }
 });
 
 app.post("/api/auto-tracking/import-selected", async (req, res, next) => {
-  const job = createJob("auto_tracking_import_selected", { label: "导入选中月份" });
+  let job = null;
   try {
     const { postIds, pages, pageSize } = normalizeSelectedImportInput(req.body || {});
     if (postIds.length === 0) {
       throw createHttpError(400, "postIds 不能为空");
     }
 
+    job = createJob("auto_tracking_import_selected", { label: "导入选中月份" });
     startJob(job.jobId, { stage: "import", progress: 10, message: "正在导入选中月份" });
     const result = await runAutoTrackingJob("import_selected", {
       mode: "backfill",
@@ -2862,7 +2881,9 @@ app.post("/api/auto-tracking/import-selected", async (req, res, next) => {
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
-    failJob(job.jobId, error, { stage: "import" });
+    if (job) {
+      failJob(job.jobId, error, { stage: "import" });
+    }
     next(error);
   }
 });
@@ -3050,7 +3071,11 @@ ensureStore()
     const autoTracking = ensureAutoTrackingState(store);
     const startupDecision = shouldRunAutoTrackingOnStartup(autoTracking, new Date());
     if (startupDecision.shouldRun) {
-      runAutoTrackingJob("startup").catch((error) => {
+      runAutoTrackingWithJob("startup", {}, {
+        label: "启动抓取",
+        startMessage: "服务启动后正在检查最新帖子",
+        successMessage: "启动抓取完成"
+      }).catch((error) => {
         console.error("Auto tracking startup error:", error.message);
       });
     } else {

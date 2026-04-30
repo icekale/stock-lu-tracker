@@ -55,6 +55,7 @@ test("admin page keeps legacy element ids used by auto-sync js", () => {
 test("admin page includes job status placeholders", () => {
   const html = read("public/admin.html");
 
+  assert.match(html, /id="adminToastRegion"/);
   assert.match(html, /id="jobStatusCard"/);
   assert.match(html, /id="jobStatusTitle"/);
   assert.match(html, /id="jobStatusProgress"/);
@@ -70,6 +71,8 @@ test("auto-sync script includes admin module switching and job polling", () => {
   assert.match(js, /async function loadJobOverview\(/);
   assert.match(js, /\/api\/jobs\/overview/);
   assert.match(js, /function renderJobStatus\(overview\)/);
+  assert.match(js, /function showToast\(/);
+  assert.match(js, /showToast\(text,\s*level\)/);
 });
 
 test("auto-sync script wires direct post URL import", () => {
@@ -92,6 +95,8 @@ test("admin css defines module shell, job status, and overflow safeguards", () =
   assert.match(css, /\.admin-module-panel\.is-active\s*\{/);
   assert.match(css, /\.job-status-card\s*\{/);
   assert.match(css, /\.job-status-progress\s*\{/);
+  assert.match(css, /\.admin-toast-region\s*\{/);
+  assert.match(css, /\.admin-toast\.is-visible\s*\{/);
   assert.match(css, /\.table-shell\s*\{[\s\S]*overflow-x:\s*auto;/);
   assert.match(css, /overflow-wrap:\s*anywhere;/);
 });

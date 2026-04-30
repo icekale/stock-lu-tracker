@@ -17,6 +17,7 @@ const state = {
   loadVersion: 0,
   jobOverview: null,
   jobPollTimer: null,
+  toastTimer: null,
   adminSection: "overview"
 };
 
@@ -66,7 +67,8 @@ const els = {
   jobStatusTitle: document.getElementById("jobStatusTitle"),
   jobStatusSummary: document.getElementById("jobStatusSummary"),
   jobStatusProgress: document.getElementById("jobStatusProgress"),
-  jobStatusMeta: document.getElementById("jobStatusMeta")
+  jobStatusMeta: document.getElementById("jobStatusMeta"),
+  adminToastRegion: document.getElementById("adminToastRegion")
 };
 
 const ADMIN_SECTIONS = new Set(["overview", "config", "tasks", "review", "metrics"]);
@@ -764,8 +766,59 @@ async function request(url, options = {}) {
   return data;
 }
 
+function getToastTitle(level) {
+  if (level === "ok") {
+    return "操作成功";
+  }
+  if (level === "err" || level === "error") {
+    return "需要处理";
+  }
+  return "正在处理";
+}
+
+function showToast(text, level = "info") {
+  if (!els.adminToastRegion) {
+    return;
+  }
+
+  const normalizedLevel = level === "error" ? "err" : level;
+  window.clearTimeout(state.toastTimer);
+  els.adminToastRegion.innerHTML = `
+    <div class="admin-toast admin-toast-${escapeHtml(normalizedLevel)}" role="status">
+      <span class="admin-toast-icon" aria-hidden="true"></span>
+      <span class="admin-toast-copy">
+        <strong>${escapeHtml(getToastTitle(normalizedLevel))}</strong>
+        <span>${escapeHtml(text)}</span>
+      </span>
+    </div>
+  `;
+
+  window.requestAnimationFrame(() => {
+    const toast = els.adminToastRegion.querySelector(".admin-toast");
+    if (toast) {
+      toast.classList.add("is-visible");
+    }
+  });
+
+  const shouldAutoHide = normalizedLevel !== "err";
+  if (shouldAutoHide) {
+    state.toastTimer = window.setTimeout(() => {
+      const toast = els.adminToastRegion?.querySelector(".admin-toast");
+      if (toast) {
+        toast.classList.remove("is-visible");
+      }
+      window.setTimeout(() => {
+        if (!els.adminToastRegion?.querySelector(".admin-toast.is-visible")) {
+          els.adminToastRegion.innerHTML = "";
+        }
+      }, 180);
+    }, 4200);
+  }
+}
+
 function setStatus(text, level = "info") {
   if (!els.autoSyncText) {
+    showToast(text, level);
     return;
   }
 
@@ -774,9 +827,10 @@ function setStatus(text, level = "info") {
   if (level === "ok") {
     els.autoSyncText.classList.add("status-ok");
   }
-  if (level === "err") {
+  if (level === "err" || level === "error") {
     els.autoSyncText.classList.add("status-err");
   }
+  showToast(text, level);
 }
 
 function setActionBusy(isBusy) {
@@ -823,9 +877,12 @@ function resolveAutoTrackingResultStatus(result, successPrefix, job = null) {
   }
 
   if (result?.skipped) {
+    const runningElsewhere = /正在执行/.test(String(result.reason || ""));
     return {
-      level: "err",
-      text: result.reason || "任务正在执行中，请稍后再试"
+      level: runningElsewhere ? "info" : "err",
+      text: runningElsewhere
+        ? "已有后台抓取任务正在执行，可在「任务执行」中查看进度。"
+        : result.reason || "任务已跳过，请稍后再试"
     };
   }
 
@@ -1830,6 +1887,9 @@ async function handleRunNow() {
     await loadJobOverview({ silent: true });
     const status = resolveAutoTrackingResultStatus(res?.result, "抓取");
     setStatus(status.text, status.level);
+    if (res?.result?.skipped) {
+      setAdminSection("tasks");
+    }
   } catch (error) {
     setStatus(`抓取失败: ${error.message}`, "err");
   } finally {

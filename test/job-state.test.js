@@ -82,3 +82,17 @@ test("recent history is bounded", () => {
 test("getJob returns null for unknown ids", () => {
   assert.equal(getJob("missing"), null);
 });
+
+test("stale running jobs are expired from the running slot", () => {
+  const job = createJob("auto_tracking_run", { label: "立即抓取" });
+  startJob(job.jobId, { stage: "collect", message: "开始抓取" });
+
+  const overview = getJobOverview({ now: "2099-01-01T00:00:00.000Z" });
+
+  assert.equal(overview.running, null);
+  assert.equal(overview.recent.length, 1);
+  assert.equal(overview.recent[0].jobId, job.jobId);
+  assert.equal(overview.recent[0].status, "failed");
+  assert.equal(overview.recent[0].stage, "stale");
+  assert.match(overview.recent[0].error.message, /任务运行时间过长/);
+});

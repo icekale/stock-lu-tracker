@@ -1,11 +1,19 @@
 const { randomUUID } = require("node:crypto");
 
 const MAX_RECENT_JOBS = 30;
+const DEFAULT_STALE_RUNNING_JOB_MS = Math.max(
+  10 * 60 * 1000,
+  Number(process.env.JOB_STALE_AFTER_MS) || 2 * 60 * 60 * 1000
+);
 const jobs = new Map();
 let recentJobIds = [];
 
-function nowIso() {
-  return new Date().toISOString();
+function nowIso(now = new Date()) {
+  const date = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString();
+  }
+  return date.toISOString();
 }
 
 function redactSensitiveText(value) {
@@ -130,7 +138,36 @@ function getJob(jobId) {
   return cloneJob(jobs.get(jobId));
 }
 
-function getJobOverview() {
+function expireStaleRunningJobs(now = new Date()) {
+  const current = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(current.getTime())) {
+    return;
+  }
+
+  for (const job of jobs.values()) {
+    if (job.status !== "running") {
+      continue;
+    }
+
+    const startedAt = new Date(job.startedAt || job.createdAt || 0);
+    const ageMs = current.getTime() - startedAt.getTime();
+    if (Number.isNaN(ageMs) || ageMs < DEFAULT_STALE_RUNNING_JOB_MS) {
+      continue;
+    }
+
+    job.status = "failed";
+    job.stage = "stale";
+    job.message = "任务运行时间过长，已自动标记为失败";
+    job.finishedAt = nowIso(current);
+    job.error = {
+      message: "任务运行时间过长，已自动标记为失败，请重新执行。"
+    };
+    rememberRecent(job.jobId);
+  }
+}
+
+function getJobOverview(options = {}) {
+  expireStaleRunningJobs(options.now || new Date());
   const all = [...jobs.values()];
   const running = all.find((job) => job.status === "running") || null;
   const queued = all.filter((job) => job.status === "queued").map(cloneJob);
@@ -156,6 +193,7 @@ module.exports = {
   skipJob,
   getJob,
   getJobOverview,
+  expireStaleRunningJobs,
   resetJobsForTests,
   redactSensitiveText
 };
