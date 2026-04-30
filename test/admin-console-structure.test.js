@@ -82,3 +82,13 @@ test("admin css defines module shell, job status, and overflow safeguards", () =
   assert.match(css, /\.table-shell\s*\{[\s\S]*overflow-x:\s*auto;/);
   assert.match(css, /overflow-wrap:\s*anywhere;/);
 });
+
+test("admin css keeps the product shell compact and stable on narrow screens", () => {
+  const css = read("public/admin.css");
+
+  assert.match(css, /\.page-shell-admin\s*\{[^}]*width:\s*min\(var\(--shell-width\),\s*100%\);[^}]*padding:\s*0;/is);
+  assert.match(css, /\.hero-panel\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto;/is);
+  assert.match(css, /\.system-status-card\s*\{[^}]*box-shadow:\s*none;/is);
+  assert.match(css, /@media \(max-width:\s*640px\)\s*\{[\s\S]*\.hero-subtitle\s*\{[\s\S]*-webkit-line-clamp:\s*2;/is);
+  assert.match(css, /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.admin-module-nav\s*\{[\s\S]*scroll-snap-type:\s*x\s+proximity;/is);
+});

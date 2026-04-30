@@ -4,12 +4,13 @@
 }
 
 .admin-page {
-  --shell-width: min(1520px, calc(100vw - 32px));
+  --shell-width: min(1480px, calc(100vw - 48px));
   min-height: 100vh;
   color: var(--color-text);
   background:
     radial-gradient(circle at top left, rgba(22, 119, 255, 0.08), transparent 26%),
     linear-gradient(180deg, #f7f9fc 0%, #eef3f8 100%);
+  overflow-x: hidden;
 }
 
 .app-header {
@@ -71,12 +72,17 @@
 }
 
 .page-main {
-  padding: 30px 0 28px;
+  padding: 22px 0 30px;
 }
 
 .page-shell {
   display: grid;
-  gap: var(--section-gap-lg);
+  gap: 18px;
+}
+
+.page-shell-admin {
+  width: min(var(--shell-width), 100%);
+  padding: 0;
 }
 
 .hero-panel,
@@ -89,12 +95,17 @@
 
 .hero-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 420px);
-  gap: 28px;
-  align-items: end;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 22px;
+  align-items: center;
   background:
-    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 30%),
+    radial-gradient(circle at top right, rgba(22, 119, 255, 0.06), transparent 28%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(250, 252, 255, 0.95));
+}
+
+.hero-copy,
+.hero-side {
+  min-width: 0;
 }
 
 .section-panel {
@@ -103,7 +114,7 @@
 
 .hero-eyebrow,
 .section-eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   color: var(--color-accent);
   font-size: var(--text-xs);
   letter-spacing: 0.12em;
@@ -120,39 +131,46 @@
 }
 
 .hero-title {
-  font-size: clamp(1.9rem, 2.8vw, 2.55rem);
+  font-size: clamp(1.72rem, 2.15vw, 2.22rem);
 }
 
 .hero-subtitle,
 .section-meta,
 .table-note {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--color-text-muted-2);
-  line-height: 1.68;
+  line-height: 1.58;
   font-size: var(--text-section-meta);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .hero-side {
   display: grid;
-  gap: 14px;
-  align-content: start;
+  gap: 10px;
+  justify-items: end;
+  align-content: center;
 }
 
 .hero-pill-list {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 10px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .hero-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 12px;
+  min-height: 26px;
+  padding: 0 10px;
   border-radius: 999px;
-  background: rgba(22, 119, 255, 0.08);
+  border: 1px solid rgba(22, 119, 255, 0.12);
+  background: rgba(22, 119, 255, 0.06);
   color: var(--color-accent);
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: var(--font-weight-semibold);
 }
 
@@ -329,11 +347,11 @@
 
 .system-status-card {
   position: relative;
-  min-height: 124px;
+  min-height: 112px;
   overflow: hidden;
   border: var(--border-soft);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card-elevated);
+  box-shadow: none;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 254, 0.96));
 }
 
@@ -353,8 +371,8 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 9px;
-  padding: 16px 16px 14px;
+  gap: 8px;
+  padding: 15px 15px 13px;
 }
 
 .system-status-card-wide {
@@ -374,7 +392,7 @@
 .system-status-value {
   margin: 0;
   color: var(--color-text-heading);
-  font-size: clamp(1.14rem, 1vw + 0.92rem, 1.42rem);
+  font-size: clamp(1.1rem, 0.86vw + 0.9rem, 1.32rem);
   line-height: 1.18;
   font-weight: var(--font-weight-semibold);
   display: flex;
@@ -399,7 +417,7 @@
 }
 
 .system-status-card-credentials .system-status-value {
-  font-size: clamp(1.02rem, 0.72vw + 0.92rem, 1.16rem);
+  font-size: clamp(0.98rem, 0.6vw + 0.88rem, 1.08rem);
   line-height: 1.24;
 }
 
@@ -1156,9 +1174,21 @@
   .hero-panel {
     align-items: start;
   }
+
+  .hero-side {
+    justify-items: start;
+  }
+
+  .hero-pill-list {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 880px) {
+  .admin-page {
+    --shell-width: min(100vw - 28px, 1480px);
+  }
+
   .app-header-inner {
     min-height: auto;
     align-items: stretch;
@@ -1194,7 +1224,7 @@
   }
 
   .hero-title {
-    font-size: clamp(1.62rem, 8vw, 2rem);
+    font-size: clamp(1.54rem, 7.4vw, 1.9rem);
   }
 
   .hero-subtitle {
@@ -1208,6 +1238,7 @@
   .metrics-toolbar-actions {
     flex-wrap: nowrap;
     overflow-x: auto;
+    max-width: 100%;
     padding-bottom: 2px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
@@ -1233,9 +1264,17 @@
 }
 
 @media (max-width: 640px) {
+  .admin-page {
+    --shell-width: min(100vw - 24px, 1480px);
+  }
+
+  .page-main {
+    padding-top: 14px;
+  }
+
   .hero-panel,
   .section-panel {
-    padding: var(--panel-padding-md);
+    padding: 16px;
   }
 
   .app-header-note {
@@ -1247,15 +1286,23 @@
   }
 
   .hero-panel {
-    gap: 18px;
+    gap: 12px;
+    border-radius: 18px;
   }
 
   .hero-title {
-    font-size: clamp(1.48rem, 9vw, 1.8rem);
+    font-size: clamp(1.42rem, 8.4vw, 1.72rem);
+  }
+
+  .hero-subtitle {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
   }
 
   .hero-pill {
-    min-height: 30px;
+    min-height: 28px;
   }
 
   .section-head,
@@ -1275,6 +1322,15 @@
 
   .work-context-grid {
     grid-template-columns: 1fr;
+  }
+
+  .system-status-card {
+    min-height: 104px;
+    border-radius: 16px;
+  }
+
+  .system-status-grid {
+    gap: 10px;
   }
 
   .quick-nav-link {
@@ -1345,18 +1401,18 @@
   z-index: 20;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px;
+  gap: 6px;
+  padding: 6px;
   border: var(--border-soft);
-  border-radius: var(--radius-card);
-  background: rgba(255, 255, 255, 0.86);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(16px) saturate(160%);
-  box-shadow: var(--shadow-card-soft);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
 }
 
 .admin-module-tab {
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 34px;
+  padding: 0 13px;
   border: 0;
   border-radius: var(--radius-pill);
   color: var(--color-text-muted-2);
@@ -1375,7 +1431,8 @@
 
 .admin-module-tab.is-active {
   color: var(--color-accent);
-  background: rgba(22, 119, 255, 0.12);
+  background: rgba(22, 119, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(22, 119, 255, 0.08);
 }
 
 .admin-module-panel {
@@ -1444,10 +1501,20 @@
     top: 58px;
     overflow-x: auto;
     flex-wrap: nowrap;
-    border-radius: var(--radius-md);
+    max-width: 100%;
+    border-radius: 14px;
+    margin-inline: -2px;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
 
   .admin-module-tab {
     flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
+  .admin-module-nav::-webkit-scrollbar {
+    display: none;
   }
 }
