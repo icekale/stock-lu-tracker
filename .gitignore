@@ -2,3 +2,5 @@ node_modules
 data/store.json
 data/store.backup*.json
 .DS_Store
+
+data/store.json.bak
