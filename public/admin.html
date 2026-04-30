@@ -347,8 +347,23 @@
                 </label>
 
                 <label class="config-field full-row">
-                  <span class="field-label">置顶帖子链接（每行一条，优先抓取）</span>
-                  <textarea class="form-control form-textarea" name="pinnedPostUrls" rows="3" placeholder="https://xueqiu.com/8790885129/381996320">https://xueqiu.com/8790885129/381996320</textarea>
+                  <span class="field-label">指定帖子链接（每行一条，优先抓取）</span>
+                  <textarea class="form-control form-textarea" name="pinnedPostUrls" rows="3" placeholder="https://xueqiu.com/8790885129/386836826">https://xueqiu.com/8790885129/381996320</textarea>
+                </label>
+
+                <label class="config-field full-row">
+                  <span class="field-label">临时导入单条帖子</span>
+                  <div class="inline-input-action">
+                    <input
+                      class="form-control"
+                      id="directPostUrlInput"
+                      name="directPostUrl"
+                      type="url"
+                      inputmode="url"
+                      placeholder="粘贴雪球帖子链接，例如 https://xueqiu.com/8790885129/386836826"
+                    />
+                    <button class="layui-btn layui-btn-normal" type="button" id="importDirectPostBtn">导入这条</button>
+                  </div>
                 </label>
 
                 <label class="config-field full-row">
@@ -588,7 +603,7 @@
         <div class="site-footer-meta">
           <span class="site-footer-item" data-footer-author data-fallback="Kale">Kale</span>
           <span class="site-footer-sep">·</span>
-          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.18">v0.1.18</span>
+          <span class="site-footer-item site-footer-version" data-footer-version data-fallback="v0.1.19">v0.1.19</span>
           <span class="site-footer-sep">·</span>
           <a
             class="site-footer-link"

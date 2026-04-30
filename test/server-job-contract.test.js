@@ -25,3 +25,12 @@ test("auto tracking actions create and finish observable jobs", () => {
   assert.match(server, /failJob\(job\.jobId, error/);
   assert.match(server, /const job = createJob\("cookie_keepalive"/);
 });
+
+test("server exposes direct post URL import as an observable job", () => {
+  const server = read("src/server.js");
+
+  assert.match(server, /app\.post\("\/api\/auto-tracking\/import-post-url"/);
+  assert.match(server, /createJob\("auto_tracking_import_post_url"/);
+  assert.match(server, /targetPostIds:\s*postIds/);
+  assert.match(server, /forceRefresh:\s*true/);
+});

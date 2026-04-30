@@ -257,6 +257,18 @@
   grid-column: 1 / -1;
 }
 
+.inline-input-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.inline-input-action .layui-btn {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
 .field-label {
   color: var(--color-text-subtle-strong);
   font-size: var(--text-ui-sm);
@@ -1516,5 +1528,13 @@
 
   .admin-module-nav::-webkit-scrollbar {
     display: none;
+  }
+
+  .inline-input-action {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-input-action .layui-btn {
+    width: 100%;
   }
 }

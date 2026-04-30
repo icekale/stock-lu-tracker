@@ -5,7 +5,10 @@ const {
   buildAutoTrackingConfigPatch,
   summarizeAutoTrackingResult,
   normalizeBackfillInput,
-  normalizeSelectedImportInput
+  normalizeSelectedImportInput,
+  normalizePostIds,
+  extractXueqiuPostIdFromUrl,
+  classifyAutoTrackingResult
 } = require("../src/auto-tracking-service");
 
 test("buildAutoTrackingConfigPatch preserves secrets when fields are omitted or empty", () => {
@@ -54,6 +57,20 @@ test("normalizeSelectedImportInput validates selected post ids", () => {
   });
 });
 
+test("normalizePostIds accepts Xueqiu post URLs and raw numeric ids", () => {
+  assert.equal(extractXueqiuPostIdFromUrl("https://xueqiu.com/8790885129/386836826"), "386836826");
+  assert.deepEqual(
+    normalizePostIds([
+      "https://xueqiu.com/8790885129/386836826",
+      "386836826",
+      "xq:386836826",
+      "https://example.com/8790885129/386836826",
+      "bad"
+    ]),
+    ["xq:386836826"]
+  );
+});
+
 test("summarizeAutoTrackingResult produces compact safe summaries", () => {
   const summary = summarizeAutoTrackingResult({
     ok: true,
@@ -73,4 +90,22 @@ test("summarizeAutoTrackingResult produces compact safe summaries", () => {
     logCount: 2,
     error: ""
   });
+});
+
+test("classifyAutoTrackingResult treats targeted zero-import failures as failed", () => {
+  assert.deepEqual(
+    classifyAutoTrackingResult(
+      {
+        ok: true,
+        importedSnapshots: 0,
+        importedTrades: 0,
+        logs: [{ level: "error", message: "雪球帖子详情返回非 JSON（可能被风控拦截）" }]
+      },
+      { targeted: true, actionLabel: "指定帖子导入" }
+    ),
+    {
+      status: "failed",
+      message: "指定帖子导入未导入数据：雪球帖子详情返回非 JSON（可能被风控拦截）"
+    }
+  );
 });

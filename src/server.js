@@ -29,7 +29,9 @@ const {
   buildAutoTrackingConfigPatch,
   summarizeAutoTrackingResult,
   normalizeBackfillInput,
-  normalizeSelectedImportInput
+  normalizeSelectedImportInput,
+  normalizePostIds: normalizeRequestedPostIds,
+  classifyAutoTrackingResult
 } = require("./auto-tracking-service");
 
 const app = express();
@@ -2071,15 +2073,7 @@ function sortByRecentDate(items, dateField = "createdAt") {
 }
 
 function normalizePostIds(input) {
-  if (!Array.isArray(input)) {
-    return [];
-  }
-
-  const ids = input
-    .map((item) => String(item || "").trim())
-    .filter((item) => /^xq:\d{6,}$/i.test(item) || /^wb:[A-Za-z0-9]{6,}$/i.test(item));
-
-  return [...new Set(ids)];
+  return normalizeRequestedPostIds(input);
 }
 
 function hasOwnPropertyValue(object, key) {
@@ -2767,6 +2761,60 @@ app.post("/api/auto-tracking/catalog", async (req, res, next) => {
       cached: cacheHit
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+
+app.post("/api/auto-tracking/import-post-url", async (req, res, next) => {
+  const job = createJob("auto_tracking_import_post_url", { label: "导入指定帖子" });
+  try {
+    const { postIds } = normalizeSelectedImportInput({ postIds: [req.body?.postUrl || req.body?.url || req.body?.postId] });
+    if (postIds.length === 0) {
+      throw createHttpError(400, "请输入有效的雪球帖子链接或帖子 ID");
+    }
+
+    startJob(job.jobId, { stage: "import", progress: 10, message: "正在导入指定帖子" });
+    const result = await runAutoTrackingJob("import_post_url", {
+      mode: "backfill",
+      targetPostIds: postIds,
+      forceRefresh: true,
+      backfillPages: 1,
+      backfillPageSize: 20
+    });
+
+    const store = await readStore();
+    const autoTracking = ensureAutoTrackingState(store);
+
+    const classification = classifyAutoTrackingResult(result, {
+      targeted: true,
+      actionLabel: "指定帖子导入"
+    });
+
+    if (classification.status === "skipped") {
+      skipJob(job.jobId, result.reason || "导入已跳过");
+    } else if (classification.status === "succeeded") {
+      finishJob(job.jobId, {
+        summary: summarizeAutoTrackingResult(result),
+        logs: result.logs,
+        message: "指定帖子导入完成"
+      });
+    } else {
+      failJob(job.jobId, new Error(classification.message || result.error || result.reason || "导入失败"), {
+        stage: "import",
+        summary: summarizeAutoTrackingResult(result)
+      });
+    }
+
+    res.json({
+      job: getJob(job.jobId),
+      result,
+      postIds,
+      autoTracking: getAutoTrackingPublic(autoTracking),
+      latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
+    });
+  } catch (error) {
+    failJob(job.jobId, error, { stage: "import" });
     next(error);
   }
 });

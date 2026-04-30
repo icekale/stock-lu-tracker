@@ -27,6 +27,8 @@ const els = {
   runBackfillBtn: document.getElementById("runBackfillBtn"),
   loadCatalogBtn: document.getElementById("loadCatalogBtn"),
   importSelectedBtn: document.getElementById("importSelectedBtn"),
+  directPostUrlInput: document.getElementById("directPostUrlInput"),
+  importDirectPostBtn: document.getElementById("importDirectPostBtn"),
   recalculateSnapshotsBtn: document.getElementById("recalculateSnapshotsBtn"),
   catalogCheckAll: document.getElementById("catalogCheckAll"),
   viewLatestBtn: document.getElementById("viewLatestBtn"),
@@ -786,6 +788,7 @@ function setActionBusy(isBusy) {
     els.runBackfillBtn,
     els.loadCatalogBtn,
     els.importSelectedBtn,
+    els.importDirectPostBtn,
     els.recalculateSnapshotsBtn
   ]
     .filter(Boolean)
@@ -804,7 +807,14 @@ function setStatusCardTone(element, tone) {
   card.classList.add(tone || "tone-neutral");
 }
 
-function resolveAutoTrackingResultStatus(result, successPrefix) {
+function resolveAutoTrackingResultStatus(result, successPrefix, job = null) {
+  if (job?.status === "failed") {
+    return {
+      level: "err",
+      text: job?.error?.message || job?.message || `${successPrefix}失败`
+    };
+  }
+
   if (result?.error) {
     return {
       level: "err",
@@ -1753,6 +1763,8 @@ async function handleSaveConfig(event) {
   const weiboCookie = String(payload.weiboCookie || "").trim();
   const qwenApiKey = String(payload.qwenApiKey || "").trim();
 
+  delete payload.directPostUrl;
+
   if (xueqiuCookie) {
     payload.xueqiuCookie = xueqiuCookie;
   } else {
@@ -1896,10 +1908,44 @@ async function handleImportSelected() {
       await fetchCatalog({ silent: true });
     }
 
-    const status = resolveAutoTrackingResultStatus(res?.result, "导入");
+    const status = resolveAutoTrackingResultStatus(res?.result, "导入", res?.job);
     setStatus(status.text, status.level);
   } catch (error) {
     setStatus(`导入失败: ${error.message}`, "err");
+  } finally {
+    setActionBusy(false);
+  }
+}
+
+async function handleImportDirectPost() {
+  const postUrl = String(els.directPostUrlInput?.value || "").trim();
+  if (!postUrl) {
+    setStatus("请先粘贴雪球帖子链接或帖子 ID", "err");
+    els.directPostUrlInput?.focus?.();
+    return;
+  }
+
+  try {
+    setActionBusy(true);
+    setStatus("正在导入指定帖子...", "info");
+    const res = await request("/api/auto-tracking/import-post-url", {
+      method: "POST",
+      body: JSON.stringify({ postUrl })
+    });
+
+    await loadData();
+    await loadJobOverview({ silent: true });
+    if (state.catalogPosts.length > 0) {
+      await fetchCatalog({ silent: true });
+    }
+
+    const status = resolveAutoTrackingResultStatus(res?.result, "导入");
+    setStatus(status.text, status.level);
+    if (status.level !== "err" && els.directPostUrlInput) {
+      els.directPostUrlInput.value = "";
+    }
+  } catch (error) {
+    setStatus(`导入指定帖子失败: ${error.message}`, "err");
   } finally {
     setActionBusy(false);
   }
@@ -2225,6 +2271,10 @@ function bindEvents() {
 
   if (els.importSelectedBtn) {
     els.importSelectedBtn.addEventListener("click", handleImportSelected);
+  }
+
+  if (els.importDirectPostBtn) {
+    els.importDirectPostBtn.addEventListener("click", handleImportDirectPost);
   }
 
   if (els.recalculateSnapshotsBtn) {
