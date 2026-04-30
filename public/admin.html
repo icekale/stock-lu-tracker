@@ -61,7 +61,190 @@
           </div>
         </section>
 
-        <div class="admin-layout-grid admin-layout-top">
+        <nav class="admin-module-nav" aria-label="后台模块导航">
+          <button class="admin-module-tab is-active" type="button" data-admin-section="overview">概览</button>
+          <button class="admin-module-tab" type="button" data-admin-section="config">抓取配置</button>
+          <button class="admin-module-tab" type="button" data-admin-section="tasks">任务执行</button>
+          <button class="admin-module-tab" type="button" data-admin-section="review">异常复核</button>
+          <button class="admin-module-tab" type="button" data-admin-section="metrics">月度校正</button>
+        </nav>
+
+        <section class="admin-module-panel is-active" id="admin-section-overview" data-admin-panel="overview">
+          <div class="admin-layout-grid admin-layout-top">
+          <section class="layui-panel section-panel system-panel" id="admin-status">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Runtime</p>
+                <h2 class="section-title">系统状态</h2>
+                <p class="section-meta" id="systemStatusNote">载入中...</p>
+              </div>
+            </header>
+            <div id="systemStatusGrid" class="system-status-grid">
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">运行状态</p>
+                  <h3 id="systemRuntimeStatus" class="system-status-value">-</h3>
+                  <p class="system-status-meta">自动抓取任务当前状态</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">最近成功</p>
+                  <h3 id="systemLastSuccess" class="system-status-value">-</h3>
+                  <p class="system-status-meta">最后一次成功导入时间</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">最新月份</p>
+                  <h3 id="systemLatestMonth" class="system-status-value">-</h3>
+                  <p class="system-status-meta">当前最新持仓快照月份</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">历史快照</p>
+                  <h3 id="systemSnapshotCount" class="system-status-value">-</h3>
+                  <p class="system-status-meta">系统内已导入的月份数</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">累计交易</p>
+                  <h3 id="systemImportedTrades" class="system-status-value">-</h3>
+                  <p class="system-status-meta">累计写入的自动导入交易</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card">
+                <div class="layui-card-body">
+                  <p class="system-status-label">OCR 状态</p>
+                  <h3 id="systemOcrStatus" class="system-status-value">-</h3>
+                  <p class="system-status-meta">识别引擎与图片上限配置</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card system-status-card-wide system-status-card-credentials">
+                <div class="layui-card-body">
+                  <p class="system-status-label">凭证状态</p>
+                  <h3 id="systemCredentialStatus" class="system-status-value">-</h3>
+                  <p class="system-status-meta">雪球 / 微博 / Qwen 凭证配置</p>
+                </div>
+              </article>
+              <article class="layui-card system-status-card system-status-card-wide system-status-card-log">
+                <div class="layui-card-body">
+                  <p class="system-status-label">最近错误</p>
+                  <p id="systemLastError" class="system-status-copy">-</p>
+                </div>
+              </article>
+            </div>
+          </section>
+          </div>
+
+        <section class="layui-panel section-panel quick-nav-panel">
+          <header class="section-head compact-head">
+            <div>
+              <p class="section-eyebrow">Quick Jump</p>
+              <h2 class="section-title">快速跳转</h2>
+            </div>
+          </header>
+          <nav class="admin-quick-nav" aria-label="后台模块导航">
+            <a class="quick-nav-link" href="#admin-config">抓取配置</a>
+            <a class="quick-nav-link" href="#admin-status">系统状态</a>
+            <a class="quick-nav-link" href="#admin-latest">最新持仓</a>
+            <a class="quick-nav-link" href="#admin-logs">同步日志</a>
+            <a class="quick-nav-link" href="#admin-catalog">月份目录</a>
+            <a class="quick-nav-link" href="#admin-history">历史快照</a>
+            <a class="quick-nav-link" href="#admin-anomalies">异常检查</a>
+            <a class="quick-nav-link" href="#admin-metrics">月度指标</a>
+          </nav>
+        </section>
+
+        <section class="layui-panel section-panel context-panel" aria-label="当前工作上下文">
+          <header class="section-head compact-head">
+            <div>
+              <p class="section-eyebrow">Current Context</p>
+              <h2 class="section-title">当前工作上下文</h2>
+            </div>
+          </header>
+          <div class="work-context-grid">
+            <article class="work-context-card">
+              <span class="work-context-label">当前查看</span>
+              <strong id="contextCurrentMonth" class="work-context-value">-</strong>
+              <span class="work-context-meta">前台快照月份</span>
+            </article>
+            <article class="work-context-card">
+              <span class="work-context-label">已选目录</span>
+              <strong id="contextCatalogSelected" class="work-context-value">-</strong>
+              <span class="work-context-meta">等待导入的月份帖子</span>
+            </article>
+            <article class="work-context-card">
+              <span class="work-context-label">待保存</span>
+              <strong id="contextMetricsDirty" class="work-context-value">-</strong>
+              <span class="work-context-meta">月度指标草稿</span>
+            </article>
+            <article class="work-context-card">
+              <span class="work-context-label">待复核</span>
+              <strong id="contextAnomalyCount" class="work-context-value">-</strong>
+              <span class="work-context-meta">异常行与快照</span>
+            </article>
+          </div>
+        </section>
+
+        <div class="admin-layout-grid">
+          <section class="layui-panel section-panel" id="admin-latest">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Latest Snapshot</p>
+                <h2 class="section-title">最新抓取持仓</h2>
+                <p class="section-meta" id="latestSnapshotMeta">暂无抓取结果</p>
+              </div>
+            </header>
+            <div class="table-shell short">
+              <table class="layui-table admin-table admin-table-latest">
+                <thead>
+                  <tr>
+                    <th>证券代码</th>
+                    <th>证券名称</th>
+                    <th>名称来源</th>
+                    <th>可用/持仓</th>
+                    <th>成本价</th>
+                    <th>最新价</th>
+                    <th>市值</th>
+                    <th>浮动盈亏</th>
+                    <th>盈亏比例(%)</th>
+                  </tr>
+                </thead>
+                <tbody id="masterRowsBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="layui-panel section-panel" id="admin-logs">
+            <header class="section-head">
+              <div>
+                <p class="section-eyebrow">Logs</p>
+                <h2 class="section-title">同步日志</h2>
+                <p class="section-meta">最近 20 条</p>
+              </div>
+            </header>
+            <div class="table-shell short">
+              <table class="layui-table admin-table admin-table-logs">
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>级别</th>
+                    <th>信息</th>
+                  </tr>
+                </thead>
+                <tbody id="syncLogsBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+
+        </section>
+
+        <section class="admin-module-panel" id="admin-section-config" data-admin-panel="config">
           <section class="layui-panel section-panel config-panel" id="admin-config">
             <header class="section-head">
               <div>
@@ -248,176 +431,22 @@
               <p class="inline-status config-status" id="autoSyncText">等待首次自动抓取</p>
             </form>
           </section>
-
-          <section class="layui-panel section-panel system-panel" id="admin-status">
-            <header class="section-head">
-              <div>
-                <p class="section-eyebrow">Runtime</p>
-                <h2 class="section-title">系统状态</h2>
-                <p class="section-meta" id="systemStatusNote">载入中...</p>
-              </div>
-            </header>
-            <div id="systemStatusGrid" class="system-status-grid">
-              <article class="layui-card system-status-card">
-                <div class="layui-card-body">
-                  <p class="system-status-label">运行状态</p>
-                  <h3 id="systemRuntimeStatus" class="system-status-value">-</h3>
-                  <p class="system-status-meta">自动抓取任务当前状态</p>
-                </div>
-              </article>
-              <article class="layui-card system-status-card">
-                <div class="layui-card-body">
-                  <p class="system-status-label">最近成功</p>
-                  <h3 id="systemLastSuccess" class="system-status-value">-</h3>
-                  <p class="system-status-meta">最后一次成功导入时间</p>
-                </div>
-              </article>
-              <article class="layui-card system-status-card">
-                <div class="layui-card-body">
-                  <p class="system-status-label">最新月份</p>
-                  <h3 id="systemLatestMonth" class="system-status-value">-</h3>
-                  <p class="system-status-meta">当前最新持仓快照月份</p>
-                </div>
-              </article>
-              <article class="layui-card system-status-card">
-                <div class="layui-card-body">
-                  <p class="system-status-label">历史快照</p>
-                  <h3 id="systemSnapshotCount" class="system-status-value">-</h3>
-                  <p class="system-status-meta">系统内已导入的月份数</p>
-                </div>
-              </article>
-              <article class="layui-card system-status-card">
-                <div class="layui-card-body">
-                  <p class="system-status-label">累计交易</p>
-                  <h3 id="systemImportedTrades" class="system-status-value">-</h3>
-                  <p class="system-status-meta">累计写入的自动导入交易</p>
-                </div>
-              </article>
-              <article class="layui-card system-status-card">
-                <div class="layui-card-body">
-                  <p class="system-status-label">OCR 状态</p>
-                  <h3 id="systemOcrStatus" class="system-status-value">-</h3>
-                  <p class="system-status-meta">识别引擎与图片上限配置</p>
-                </div>
-              </article>
-              <article class="layui-card system-status-card system-status-card-wide system-status-card-credentials">
-                <div class="layui-card-body">
-                  <p class="system-status-label">凭证状态</p>
-                  <h3 id="systemCredentialStatus" class="system-status-value">-</h3>
-                  <p class="system-status-meta">雪球 / 微博 / Qwen 凭证配置</p>
-                </div>
-              </article>
-              <article class="layui-card system-status-card system-status-card-wide system-status-card-log">
-                <div class="layui-card-body">
-                  <p class="system-status-label">最近错误</p>
-                  <p id="systemLastError" class="system-status-copy">-</p>
-                </div>
-              </article>
-            </div>
-          </section>
-        </div>
-
-        <section class="layui-panel section-panel quick-nav-panel">
-          <header class="section-head compact-head">
-            <div>
-              <p class="section-eyebrow">Quick Jump</p>
-              <h2 class="section-title">快速跳转</h2>
-            </div>
-          </header>
-          <nav class="admin-quick-nav" aria-label="后台模块导航">
-            <a class="quick-nav-link" href="#admin-config">抓取配置</a>
-            <a class="quick-nav-link" href="#admin-status">系统状态</a>
-            <a class="quick-nav-link" href="#admin-latest">最新持仓</a>
-            <a class="quick-nav-link" href="#admin-logs">同步日志</a>
-            <a class="quick-nav-link" href="#admin-catalog">月份目录</a>
-            <a class="quick-nav-link" href="#admin-history">历史快照</a>
-            <a class="quick-nav-link" href="#admin-anomalies">异常检查</a>
-            <a class="quick-nav-link" href="#admin-metrics">月度指标</a>
-          </nav>
         </section>
 
-        <section class="layui-panel section-panel context-panel" aria-label="当前工作上下文">
-          <header class="section-head compact-head">
-            <div>
-              <p class="section-eyebrow">Current Context</p>
-              <h2 class="section-title">当前工作上下文</h2>
-            </div>
-          </header>
-          <div class="work-context-grid">
-            <article class="work-context-card">
-              <span class="work-context-label">当前查看</span>
-              <strong id="contextCurrentMonth" class="work-context-value">-</strong>
-              <span class="work-context-meta">前台快照月份</span>
-            </article>
-            <article class="work-context-card">
-              <span class="work-context-label">已选目录</span>
-              <strong id="contextCatalogSelected" class="work-context-value">-</strong>
-              <span class="work-context-meta">等待导入的月份帖子</span>
-            </article>
-            <article class="work-context-card">
-              <span class="work-context-label">待保存</span>
-              <strong id="contextMetricsDirty" class="work-context-value">-</strong>
-              <span class="work-context-meta">月度指标草稿</span>
-            </article>
-            <article class="work-context-card">
-              <span class="work-context-label">待复核</span>
-              <strong id="contextAnomalyCount" class="work-context-value">-</strong>
-              <span class="work-context-meta">异常行与快照</span>
-            </article>
-          </div>
-        </section>
-
-        <div class="admin-layout-grid">
-          <section class="layui-panel section-panel" id="admin-latest">
-            <header class="section-head">
+        <section class="admin-module-panel" id="admin-section-tasks" data-admin-panel="tasks">
+          <section class="layui-panel section-panel job-status-card" id="jobStatusCard" aria-live="polite">
+            <header class="section-head compact-head">
               <div>
-                <p class="section-eyebrow">Latest Snapshot</p>
-                <h2 class="section-title">最新抓取持仓</h2>
-                <p class="section-meta" id="latestSnapshotMeta">暂无抓取结果</p>
+                <p class="section-eyebrow">Task Status</p>
+                <h2 class="section-title" id="jobStatusTitle">当前没有运行任务</h2>
+                <p class="section-meta" id="jobStatusSummary">点击抓取、回溯或保活后，这里会显示执行阶段和结果。</p>
               </div>
             </header>
-            <div class="table-shell short">
-              <table class="layui-table admin-table admin-table-latest">
-                <thead>
-                  <tr>
-                    <th>证券代码</th>
-                    <th>证券名称</th>
-                    <th>名称来源</th>
-                    <th>可用/持仓</th>
-                    <th>成本价</th>
-                    <th>最新价</th>
-                    <th>市值</th>
-                    <th>浮动盈亏</th>
-                    <th>盈亏比例(%)</th>
-                  </tr>
-                </thead>
-                <tbody id="masterRowsBody"></tbody>
-              </table>
+            <div class="job-status-progress" id="jobStatusProgress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <span style="width: 0%"></span>
             </div>
+            <div class="job-status-meta" id="jobStatusMeta">等待任务</div>
           </section>
-
-          <section class="layui-panel section-panel" id="admin-logs">
-            <header class="section-head">
-              <div>
-                <p class="section-eyebrow">Logs</p>
-                <h2 class="section-title">同步日志</h2>
-                <p class="section-meta">最近 20 条</p>
-              </div>
-            </header>
-            <div class="table-shell short">
-              <table class="layui-table admin-table admin-table-logs">
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>级别</th>
-                    <th>信息</th>
-                  </tr>
-                </thead>
-                <tbody id="syncLogsBody"></tbody>
-              </table>
-            </div>
-          </section>
-        </div>
 
         <div class="admin-layout-grid">
           <section class="layui-panel section-panel" id="admin-catalog">
@@ -478,6 +507,10 @@
           </section>
         </div>
 
+
+        </section>
+
+        <section class="admin-module-panel" id="admin-section-review" data-admin-panel="review">
         <section class="layui-panel section-panel" id="admin-anomalies">
           <header class="section-head">
             <div>
@@ -502,6 +535,10 @@
           </div>
         </section>
 
+
+        </section>
+
+        <section class="admin-module-panel" id="admin-section-metrics" data-admin-panel="metrics">
         <section class="layui-panel section-panel" id="admin-metrics">
           <header class="section-head">
             <div>
@@ -541,6 +578,7 @@
               <tbody id="monthlyMetricBody"></tbody>
             </table>
           </div>
+        </section>
         </section>
       </div>
     </main>
