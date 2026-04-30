@@ -1,6 +1,7 @@
 node_modules
 data/store.json
 data/store.backup*.json
+data/ocr-cache/
 .DS_Store
 
 data/store.json.bak

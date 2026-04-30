@@ -12,7 +12,7 @@ const XUEQIU_UID = "8790885129";
 const WEIBO_UID = "3962719063";
 
 const DEFAULT_PINNED_POST_URLS = ["https://xueqiu.com/8790885129/381996320"];
-const DEFAULT_XUEQIU_TITLE_REGEX = "游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图";
+const DEFAULT_XUEQIU_TITLE_REGEX = "游戏仓\\s*(?:20\\d{2}\\s*年\\s*)?\\d{1,2}\\s*月\\s*PS图";
 
 const ACTION_KEYWORDS = [
   "加仓",
@@ -669,6 +669,15 @@ function normalizeRegexInput(value, fallback) {
   }
 }
 
+function normalizeXueqiuTitleRegexInput(value) {
+  const raw = String(value || "").trim();
+  const legacyRegex = "游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图";
+  if (!raw || raw === legacyRegex) {
+    return DEFAULT_XUEQIU_TITLE_REGEX;
+  }
+  return normalizeRegexInput(raw, DEFAULT_XUEQIU_TITLE_REGEX);
+}
+
 function mergeAutoTrackingConfig(config) {
   const merged = {
     ...DEFAULT_AUTO_TRACKING,
@@ -700,7 +709,7 @@ function mergeAutoTrackingConfig(config) {
   merged.backfillMaxPages = clampNumber(merged.backfillMaxPages, 36, 1, 120);
   merged.backfillPageSize = clampNumber(merged.backfillPageSize, 20, 5, 50);
   merged.pinnedPostUrls = normalizePinnedPostUrls(merged.pinnedPostUrls);
-  merged.xueqiuTitleRegex = normalizeRegexInput(merged.xueqiuTitleRegex, DEFAULT_XUEQIU_TITLE_REGEX);
+  merged.xueqiuTitleRegex = normalizeXueqiuTitleRegexInput(merged.xueqiuTitleRegex);
   merged.keywords = Array.isArray(merged.keywords)
     ? merged.keywords.map((item) => String(item || "").trim()).filter(Boolean)
     : [...DEFAULT_AUTO_TRACKING.keywords];
@@ -1575,7 +1584,8 @@ function isXueqiuTargetTitlePost(post, titleRegex) {
   }
   const title = String(post.title || post.raw?.title || "");
   const text = String(post.text || "");
-  return titleRegex.test(title) || titleRegex.test(text);
+  const monthlyPsTitleRegex = /游戏仓\s*(?:20\d{2}\s*年\s*)?\d{1,2}\s*月\s*PS图/i;
+  return titleRegex.test(title) || titleRegex.test(text) || monthlyPsTitleRegex.test(title) || monthlyPsTitleRegex.test(text);
 }
 
 function extractXueqiuPostIdFromUrl(rawUrl) {
@@ -4263,6 +4273,8 @@ module.exports = {
   DEFAULT_AUTO_TRACKING,
   ensureAutoTrackingState,
   mergeAutoTrackingConfig,
+  buildXueqiuTitleRegex,
+  isXueqiuTargetTitlePost,
   collectSuperLudinggongSnapshots,
   collectSuperLudinggongPostCatalog,
   keepCookiesAlive

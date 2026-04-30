@@ -11,6 +11,12 @@ const {
   classifyAutoTrackingResult
 } = require("../src/auto-tracking-service");
 
+const {
+  mergeAutoTrackingConfig,
+  isXueqiuTargetTitlePost,
+  buildXueqiuTitleRegex
+} = require("../src/super-ludinggong-sync");
+
 test("buildAutoTrackingConfigPatch preserves secrets when fields are omitted or empty", () => {
   const current = {
     enabled: true,
@@ -107,5 +113,42 @@ test("classifyAutoTrackingResult treats targeted zero-import failures as failed"
       status: "failed",
       message: "指定帖子导入未导入数据：雪球帖子详情返回非 JSON（可能被风控拦截）"
     }
+  );
+});
+
+test("Xueqiu title matching accepts monthly PS titles without year", () => {
+  const titleRegex = buildXueqiuTitleRegex({
+    xueqiuTitleRegex: "游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图"
+  });
+
+  assert.equal(
+    isXueqiuTargetTitlePost(
+      {
+        source: "xueqiu",
+        title: "游戏仓4月PS图",
+        text: "本游戏仓4月收盘1989.2W"
+      },
+      titleRegex
+    ),
+    true
+  );
+});
+
+test("legacy Xueqiu title regex config is normalized to the relaxed default", () => {
+  const config = mergeAutoTrackingConfig({
+    xueqiuTitleRegex: "游戏仓\\s*20\\d{2}\\s*年\\s*\\d{1,2}\\s*月\\s*PS图"
+  });
+
+  assert.match(config.xueqiuTitleRegex, /\(\?:20\\d\{2\}/);
+  assert.equal(
+    isXueqiuTargetTitlePost(
+      {
+        source: "xueqiu",
+        title: "游戏仓4月PS图",
+        text: ""
+      },
+      buildXueqiuTitleRegex(config)
+    ),
+    true
   );
 });
