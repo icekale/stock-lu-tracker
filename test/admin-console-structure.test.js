@@ -69,3 +69,16 @@ test("auto-sync script includes admin module switching and job polling", () => {
   assert.match(js, /\/api\/jobs\/overview/);
   assert.match(js, /function renderJobStatus\(overview\)/);
 });
+
+test("admin css defines module shell, job status, and overflow safeguards", () => {
+  const css = read("public/admin.css");
+
+  assert.match(css, /\.admin-module-nav\s*\{/);
+  assert.match(css, /\.admin-module-tab\.is-active\s*\{/);
+  assert.match(css, /\.admin-module-panel\s*\{/);
+  assert.match(css, /\.admin-module-panel\.is-active\s*\{/);
+  assert.match(css, /\.job-status-card\s*\{/);
+  assert.match(css, /\.job-status-progress\s*\{/);
+  assert.match(css, /\.table-shell\s*\{[\s\S]*overflow-x:\s*auto;/);
+  assert.match(css, /overflow-wrap:\s*anywhere;/);
+});

@@ -1322,3 +1322,116 @@
     padding-bottom: 0;
   }
 }
+
+.admin-module-nav {
+  position: sticky;
+  top: 68px;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: var(--border-soft);
+  border-radius: var(--radius-card);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: var(--shadow-card-soft);
+}
+
+.admin-module-tab {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted-2);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-ui-md);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.admin-module-tab:hover {
+  color: var(--color-text-heading);
+  background: rgba(15, 23, 42, 0.045);
+}
+
+.admin-module-tab.is-active {
+  color: var(--color-accent);
+  background: rgba(22, 119, 255, 0.12);
+}
+
+.admin-module-panel {
+  display: none;
+  gap: var(--section-gap-lg);
+}
+
+.admin-module-panel.is-active {
+  display: grid;
+}
+
+.job-status-card {
+  border-color: rgba(22, 119, 255, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 250, 255, 0.94));
+}
+
+.job-status-card.is-running {
+  border-color: rgba(22, 119, 255, 0.24);
+}
+
+.job-status-card.is-failed {
+  border-color: rgba(220, 38, 38, 0.24);
+}
+
+.job-status-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.job-status-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent-strong));
+  transition: width 0.24s ease;
+}
+
+.job-status-meta {
+  margin-top: 10px;
+  color: var(--color-text-muted-3);
+  font-size: var(--text-ui-sm);
+  overflow-wrap: anywhere;
+}
+
+.table-shell {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.admin-table,
+.system-status-copy,
+.inline-status,
+.table-note,
+.config-field,
+.form-control {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .admin-module-nav {
+    top: 58px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    border-radius: var(--radius-md);
+  }
+
+  .admin-module-tab {
+    flex: 0 0 auto;
+  }
+}
