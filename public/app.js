@@ -1166,7 +1166,7 @@ function buildDetailInsightGridHtml(snapshot, rows) {
     {
       label: "待复核",
       value: review.needsReview > 0 ? `${review.needsReview} 行` : "通过",
-      valueClass: review.needsReview > 0 ? "delta-neg" : "delta-pos"
+      valueClass: review.needsReview > 0 ? "review-alert" : "review-ok"
     }
   ];
 

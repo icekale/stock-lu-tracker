@@ -278,12 +278,20 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
-.inline-status.pos {
+.status-ok {
+  color: var(--color-success-strong);
+}
+
+.status-err {
+  color: var(--color-danger-strong);
+}
+
+.inline-status.status-ok {
   border-color: rgba(22, 163, 74, 0.16);
   background: linear-gradient(180deg, rgba(240, 253, 244, 0.96), rgba(248, 255, 250, 0.92));
 }
 
-.inline-status.neg {
+.inline-status.status-err {
   border-color: rgba(220, 38, 38, 0.16);
   background: linear-gradient(180deg, rgba(254, 242, 242, 0.96), rgba(255, 249, 249, 0.92));
 }
@@ -716,6 +724,14 @@
 
 .neg {
   color: var(--color-danger-strong);
+}
+
+.finance-pos {
+  color: var(--color-danger-strong);
+}
+
+.finance-neg {
+  color: var(--color-success-strong);
 }
 
 .empty {

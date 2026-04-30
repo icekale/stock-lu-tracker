@@ -141,8 +141,8 @@
   --color-warning-soft: rgba(217, 119, 6, 0.12);
   --color-data-number: #3c4656;
   --color-data-number-strong: #273142;
-  --color-data-positive: #23714a;
-  --color-data-negative: #b05b63;
+  --color-data-positive: #b05b63;
+  --color-data-negative: #23714a;
   --color-data-neutral: #6f7888;
 
   --color-badge-idle-bg: #eff1f4;
@@ -274,8 +274,8 @@
   --line-soft: var(--color-line-soft);
   --blue: var(--color-accent);
   --blue-hover: var(--color-accent-strong);
-  --gain: var(--color-success);
-  --loss: var(--color-danger);
+  --gain: var(--color-danger);
+  --loss: var(--color-success);
   --warn: var(--color-warning);
 }
 

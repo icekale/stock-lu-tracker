@@ -768,12 +768,12 @@ function setStatus(text, level = "info") {
   }
 
   els.autoSyncText.textContent = text;
-  els.autoSyncText.classList.remove("pos", "neg");
+  els.autoSyncText.classList.remove("status-ok", "status-err");
   if (level === "ok") {
-    els.autoSyncText.classList.add("pos");
+    els.autoSyncText.classList.add("status-ok");
   }
   if (level === "err") {
-    els.autoSyncText.classList.add("neg");
+    els.autoSyncText.classList.add("status-err");
   }
 }
 
@@ -1138,8 +1138,8 @@ function renderSnapshot() {
       const floatingPnlRaw = Number.isFinite(Number(item.floatingPnl)) ? Number(item.floatingPnl) : null;
       const pnlPctRaw = Number.isFinite(Number(item.pnlPct)) ? Number(item.pnlPct) : null;
 
-      const pnlClass = floatingPnlRaw > 0 ? "pos" : floatingPnlRaw < 0 ? "neg" : "";
-      const pctClass = pnlPctRaw > 0 ? "pos" : pnlPctRaw < 0 ? "neg" : "";
+      const pnlClass = floatingPnlRaw > 0 ? "finance-pos" : floatingPnlRaw < 0 ? "finance-neg" : "";
+      const pctClass = pnlPctRaw > 0 ? "finance-pos" : pnlPctRaw < 0 ? "finance-neg" : "";
       const qtyText = formatNumber(qtyRaw, 0);
       const nameBadge = diagnostics
         ? `<span class="tag ${diagnostics.level === "warn" ? "tag-warn" : "tag-fix"}">${
