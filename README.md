@@ -88,7 +88,7 @@ docker run -d \
   -e ADMIN_PASSWORD='请改成你的后台密码' \
   -e ADMIN_COOKIE_SECURE=false \
   -e TESSDATA_PREFIX=/app \
-  icekale/stock-lu-tracker:v0.1.19
+  icekale/stock-lu-tracker:v0.1.20
 ```
 
 如需始终跟随最新构建，可把镜像标签改回 `latest`。
@@ -104,7 +104,7 @@ docker run -d \
 docker compose up -d
 ```
 
-默认示例已固定到 `v0.1.19`，这样部署更稳定；如果你希望始终跟随最新构建，可手动改回 `latest`。
+默认示例已固定到 `v0.1.20`，这样部署更稳定；如果你希望始终跟随最新构建，可手动改回 `latest`。
 
 如需开启后台密码，在 compose 的 `environment` 里增加：
 
@@ -126,8 +126,8 @@ OCR_DISK_CACHE_ENABLED: "true"
 ### 6.3 本地构建并运行
 
 ```bash
-docker build -t icekale/stock-lu-tracker:v0.1.19 .
-docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PASSWORD='请改成你的后台密码' -e ADMIN_COOKIE_SECURE=false icekale/stock-lu-tracker:v0.1.19
+docker build -t icekale/stock-lu-tracker:v0.1.20 .
+docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PASSWORD='请改成你的后台密码' -e ADMIN_COOKIE_SECURE=false icekale/stock-lu-tracker:v0.1.20
 ```
 
 说明：
@@ -147,7 +147,7 @@ docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PAS
 如需显式指定标签：
 
 ```bash
-./scripts/docker-publish-multiarch.sh v0.1.19
+./scripts/docker-publish-multiarch.sh v0.1.20
 ```
 
 特点：
@@ -163,7 +163,7 @@ docker run -d --name stock-lu -p 8787:8787 -v $(pwd)/data:/app/data -e ADMIN_PAS
 ```yaml
 services:
   stock-lu:
-    image: icekale/stock-lu-tracker:v0.1.19
+    image: icekale/stock-lu-tracker:v0.1.20
     container_name: stock-lu
     network_mode: bridge
     ports:
@@ -195,7 +195,7 @@ services:
 如果你当前已经在 Unraid 上运行旧版本，可按下面步骤升级到新版本：
 
 1. 先备份你的数据目录，例如：`/mnt/user/appdata/stock-lu/data`
-2. 将 compose 或模板里的镜像标签改成新版本，例如：`icekale/stock-lu-tracker:v0.1.19`
+2. 将 compose 或模板里的镜像标签改成新版本，例如：`icekale/stock-lu-tracker:v0.1.20`
 3. 在 Unraid 的 Compose Manager 中执行重新拉取并重建
 4. 如果你使用命令行，也可以执行：
 

@@ -1939,7 +1939,7 @@ async function handleImportDirectPost() {
       await fetchCatalog({ silent: true });
     }
 
-    const status = resolveAutoTrackingResultStatus(res?.result, "导入");
+    const status = resolveAutoTrackingResultStatus(res?.result, "导入", res?.job);
     setStatus(status.text, status.level);
     if (status.level !== "err" && els.directPostUrlInput) {
       els.directPostUrlInput.value = "";
