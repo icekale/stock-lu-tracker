@@ -298,11 +298,72 @@ async function mutateStore(mutator) {
   return result;
 }
 
+async function pathExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readFileStat(filePath) {
+  try {
+    return await fs.stat(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function getStorePaths() {
+  return {
+    dataDir: DATA_DIR,
+    storePath: STORE_PATH,
+    backupPath: STORE_BACKUP_PATH
+  };
+}
+
+async function getStoreHealthSummary() {
+  const [storeExists, backupExists, storeStat, backupStat] = await Promise.all([
+    pathExists(STORE_PATH),
+    pathExists(STORE_BACKUP_PATH),
+    readFileStat(STORE_PATH),
+    readFileStat(STORE_BACKUP_PATH)
+  ]);
+
+  let readable = false;
+  let parseError = null;
+  if (storeExists) {
+    try {
+      await readStoreFile(STORE_PATH);
+      readable = true;
+    } catch (error) {
+      parseError = error.message;
+    }
+  }
+
+  return {
+    dataDir: DATA_DIR,
+    storePath: STORE_PATH,
+    backupPath: STORE_BACKUP_PATH,
+    exists: storeExists,
+    backupExists,
+    readable,
+    sizeBytes: storeStat?.size || 0,
+    backupSizeBytes: backupStat?.size || 0,
+    updatedAt: storeStat?.mtime ? storeStat.mtime.toISOString() : null,
+    backupUpdatedAt: backupStat?.mtime ? backupStat.mtime.toISOString() : null,
+    parseError
+  };
+}
+
 module.exports = {
   readStore,
   mutateStore,
   ensureStore,
-  flushStore
+  flushStore,
+  getStorePaths,
+  getStoreHealthSummary
 };
 
 registerFlushHooks();
