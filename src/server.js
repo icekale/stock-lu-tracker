@@ -4,7 +4,7 @@ const { createHash, createHmac, randomUUID, timingSafeEqual } = require("node:cr
 const express = require("express");
 const appPackage = require("../package.json");
 
-const { ensureStore, readStore, mutateStore } = require("./store");
+const { ensureStore, readStore, mutateStore, getStoreHealthSummary } = require("./store");
 const { buildPortfolio, buildMonthlyStatus, toMonthKey } = require("./portfolio");
 const { extractSnapshotPostMetrics } = require("./post-metrics");
 const { refreshQuotes, lookupSecurityNames } = require("./quotes");
@@ -16,6 +16,21 @@ const {
   collectSuperLudinggongPostCatalog,
   keepCookiesAlive
 } = require("./super-ludinggong-sync");
+const {
+  createJob,
+  startJob,
+  finishJob,
+  failJob,
+  skipJob,
+  getJob,
+  getJobOverview
+} = require("./job-state");
+const {
+  buildAutoTrackingConfigPatch,
+  summarizeAutoTrackingResult,
+  normalizeBackfillInput,
+  normalizeSelectedImportInput
+} = require("./auto-tracking-service");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8787;
@@ -629,6 +644,7 @@ app.use("/api/quotes", requireAdminAuth);
 app.use("/api/snapshots", requireAdminAuth);
 app.use("/api/monthly-updates", requireAdminAuth);
 app.use("/api/auto-tracking", requireAdminAuth);
+app.use("/api/jobs", requireAdminAuth);
 app.use("/vendor/layui", express.static(path.join(process.cwd(), "node_modules", "layui", "dist")));
 app.use(
   express.static(path.join(process.cwd(), "public"), {
@@ -2128,11 +2144,34 @@ function buildAutoTrackingBootstrapPayload(store, options = {}) {
   };
 }
 
-app.get("/api/health", (_req, res) => {
-  res.json({
-    ok: true,
-    now: new Date().toISOString()
-  });
+app.get("/api/jobs/overview", (_req, res) => {
+  res.json(getJobOverview());
+});
+
+app.get("/api/jobs/:jobId", (req, res, next) => {
+  try {
+    const job = getJob(String(req.params.jobId || ""));
+    if (!job) {
+      throw createHttpError(404, "任务不存在");
+    }
+    res.json(job);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/health", async (_req, res, next) => {
+  try {
+    res.json({
+      ok: true,
+      now: new Date().toISOString(),
+      version: APP_META.version,
+      store: await getStoreHealthSummary(),
+      jobs: getJobOverview()
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get("/api/app-meta", (_req, res) => {
@@ -2546,108 +2585,7 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
 
     await mutateStore((store) => {
       const autoTracking = ensureAutoTrackingState(store);
-
-      const patch = {
-        ...autoTracking.config
-      };
-
-      if (typeof payload.enabled !== "undefined") {
-        patch.enabled = Boolean(payload.enabled);
-      }
-
-      if (typeof payload.intervalMinutes !== "undefined") {
-        patch.intervalMinutes = Number(payload.intervalMinutes);
-      }
-
-      if (typeof payload.smartScheduleEnabled !== "undefined") {
-        patch.smartScheduleEnabled = Boolean(payload.smartScheduleEnabled);
-      }
-
-      if (typeof payload.monthEndWindowDays !== "undefined") {
-        patch.monthEndWindowDays = Number(payload.monthEndWindowDays);
-      }
-
-      if (typeof payload.offWindowIntervalHours !== "undefined") {
-        patch.offWindowIntervalHours = Number(payload.offWindowIntervalHours);
-      }
-
-      if (typeof payload.skipStartupOutsideWindow !== "undefined") {
-        patch.skipStartupOutsideWindow = Boolean(payload.skipStartupOutsideWindow);
-      }
-
-      if (typeof payload.cookieKeepAliveEnabled !== "undefined") {
-        patch.cookieKeepAliveEnabled = Boolean(payload.cookieKeepAliveEnabled);
-      }
-
-      if (typeof payload.cookieKeepAliveIntervalHours !== "undefined") {
-        patch.cookieKeepAliveIntervalHours = Number(payload.cookieKeepAliveIntervalHours);
-      }
-
-      if (typeof payload.maxPostsPerSource !== "undefined") {
-        patch.maxPostsPerSource = Number(payload.maxPostsPerSource);
-      }
-
-      if (typeof payload.ocrEnabled !== "undefined") {
-        patch.ocrEnabled = Boolean(payload.ocrEnabled);
-      }
-
-      if (typeof payload.ocrProvider !== "undefined") {
-        patch.ocrProvider = String(payload.ocrProvider || "").trim();
-      }
-
-      if (typeof payload.ocrMaxImagesPerPost !== "undefined") {
-        patch.ocrMaxImagesPerPost = Number(payload.ocrMaxImagesPerPost);
-      }
-
-      if (typeof payload.keywords !== "undefined") {
-        patch.keywords = Array.isArray(payload.keywords)
-          ? payload.keywords
-          : String(payload.keywords || "")
-              .split(/[,\n]/)
-              .map((item) => item.trim())
-              .filter(Boolean);
-      }
-
-      if (typeof payload.pinnedPostUrls !== "undefined") {
-        patch.pinnedPostUrls = Array.isArray(payload.pinnedPostUrls)
-          ? payload.pinnedPostUrls
-          : String(payload.pinnedPostUrls || "")
-              .split(/[\n,]/)
-              .map((item) => item.trim())
-              .filter(Boolean);
-      }
-
-      if (typeof payload.xueqiuTitleRegex !== "undefined") {
-        patch.xueqiuTitleRegex = String(payload.xueqiuTitleRegex || "").trim();
-      }
-
-      if (typeof payload.backfillMaxPages !== "undefined") {
-        patch.backfillMaxPages = Number(payload.backfillMaxPages);
-      }
-
-      if (typeof payload.backfillPageSize !== "undefined") {
-        patch.backfillPageSize = Number(payload.backfillPageSize);
-      }
-
-      patch.xueqiuCookie = readPatchedSecretValue(
-        payload,
-        "xueqiuCookie",
-        "clearXueqiuCookie",
-        patch.xueqiuCookie
-      );
-      patch.weiboCookie = readPatchedSecretValue(
-        payload,
-        "weiboCookie",
-        "clearWeiboCookie",
-        patch.weiboCookie
-      );
-      patch.qwenApiKey = readPatchedSecretValue(
-        payload,
-        "qwenApiKey",
-        "clearQwenApiKey",
-        patch.qwenApiKey
-      );
-
+      const patch = buildAutoTrackingConfigPatch(autoTracking.config, payload);
       autoTracking.config = mergeAutoTrackingConfig(patch);
     });
 
@@ -2668,51 +2606,85 @@ app.post("/api/auto-tracking/config", async (req, res, next) => {
 });
 
 app.post("/api/auto-tracking/run", async (_req, res, next) => {
+  const job = createJob("auto_tracking_run", { label: "立即抓取" });
   try {
+    startJob(job.jobId, { stage: "collect", progress: 10, message: "正在抓取最新帖子" });
     const result = await runAutoTrackingJob("manual");
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
 
+    if (result.skipped) {
+      skipJob(job.jobId, result.reason || "任务已跳过");
+    } else if (result.ok) {
+      finishJob(job.jobId, {
+        summary: summarizeAutoTrackingResult(result),
+        logs: result.logs,
+        message: "抓取完成"
+      });
+    } else {
+      failJob(job.jobId, new Error(result.error || result.reason || "抓取失败"), {
+        stage: "collect",
+        summary: summarizeAutoTrackingResult(result)
+      });
+    }
+
     res.json({
+      job: getJob(job.jobId),
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
+    failJob(job.jobId, error, { stage: "collect" });
     next(error);
   }
 });
-
 app.post("/api/auto-tracking/cookie-keepalive", async (_req, res, next) => {
+  const job = createJob("cookie_keepalive", { label: "Cookie 保活" });
   try {
+    startJob(job.jobId, { stage: "keepalive", progress: 10, message: "正在保活 Cookie" });
     const result = await runCookieKeepAliveJob("manual");
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
 
+    if (result.skipped) {
+      skipJob(job.jobId, result.reason || "Cookie 保活已跳过");
+    } else if (result.ok) {
+      finishJob(job.jobId, {
+        summary: {
+          ok: true,
+          successCount: Number(result.successCount) || 0,
+          failedCount: Number(result.failedCount) || 0,
+          skippedCount: Number(result.skippedCount) || 0
+        },
+        logs: result.logs,
+        message: "Cookie 保活完成"
+      });
+    } else {
+      failJob(job.jobId, new Error(result.error || "Cookie 保活失败"), {
+        stage: "keepalive",
+        summary: { ok: false }
+      });
+    }
+
     res.json({
       ok: true,
+      job: getJob(job.jobId),
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
+    failJob(job.jobId, error, { stage: "keepalive" });
     next(error);
   }
 });
-
 app.post("/api/auto-tracking/backfill", async (req, res, next) => {
+  const job = createJob("auto_tracking_backfill", { label: "历史回溯" });
   try {
-    const pagesRaw = req.body?.pages;
-    const pageSizeRaw = req.body?.pageSize;
-    const pages =
-      typeof pagesRaw === "undefined" || pagesRaw === null || pagesRaw === ""
-        ? undefined
-        : Number(pagesRaw);
-    const pageSize =
-      typeof pageSizeRaw === "undefined" || pageSizeRaw === null || pageSizeRaw === ""
-        ? undefined
-        : Number(pageSizeRaw);
+    const { pages, pageSize } = normalizeBackfillInput(req.body || {});
 
+    startJob(job.jobId, { stage: "collect", progress: 10, message: "正在回溯历史帖子" });
     const result = await runAutoTrackingJob("backfill", {
       mode: "backfill",
       backfillPages: pages,
@@ -2722,16 +2694,32 @@ app.post("/api/auto-tracking/backfill", async (req, res, next) => {
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
 
+    if (result.skipped) {
+      skipJob(job.jobId, result.reason || "历史回溯已跳过");
+    } else if (result.ok) {
+      finishJob(job.jobId, {
+        summary: summarizeAutoTrackingResult(result),
+        logs: result.logs,
+        message: "历史回溯完成"
+      });
+    } else {
+      failJob(job.jobId, new Error(result.error || result.reason || "历史回溯失败"), {
+        stage: "collect",
+        summary: summarizeAutoTrackingResult(result)
+      });
+    }
+
     res.json({
+      job: getJob(job.jobId),
       result,
       autoTracking: getAutoTrackingPublic(autoTracking),
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
+    failJob(job.jobId, error, { stage: "collect" });
     next(error);
   }
 });
-
 app.post("/api/auto-tracking/catalog", async (req, res, next) => {
   try {
     const pagesRaw = req.body?.pages;
@@ -2784,23 +2772,14 @@ app.post("/api/auto-tracking/catalog", async (req, res, next) => {
 });
 
 app.post("/api/auto-tracking/import-selected", async (req, res, next) => {
+  const job = createJob("auto_tracking_import_selected", { label: "导入选中月份" });
   try {
-    const postIds = normalizePostIds(req.body?.postIds);
+    const { postIds, pages, pageSize } = normalizeSelectedImportInput(req.body || {});
     if (postIds.length === 0) {
       throw createHttpError(400, "postIds 不能为空");
     }
 
-    const pagesRaw = req.body?.pages;
-    const pageSizeRaw = req.body?.pageSize;
-    const pages =
-      typeof pagesRaw === "undefined" || pagesRaw === null || pagesRaw === ""
-        ? undefined
-        : Number(pagesRaw);
-    const pageSize =
-      typeof pageSizeRaw === "undefined" || pageSizeRaw === null || pageSizeRaw === ""
-        ? undefined
-        : Number(pageSizeRaw);
-
+    startJob(job.jobId, { stage: "import", progress: 10, message: "正在导入选中月份" });
     const result = await runAutoTrackingJob("import_selected", {
       mode: "backfill",
       targetPostIds: postIds,
@@ -2812,17 +2791,33 @@ app.post("/api/auto-tracking/import-selected", async (req, res, next) => {
     const store = await readStore();
     const autoTracking = ensureAutoTrackingState(store);
 
+    if (result.skipped) {
+      skipJob(job.jobId, result.reason || "导入已跳过");
+    } else if (result.ok) {
+      finishJob(job.jobId, {
+        summary: summarizeAutoTrackingResult(result),
+        logs: result.logs,
+        message: "选中月份导入完成"
+      });
+    } else {
+      failJob(job.jobId, new Error(result.error || result.reason || "导入失败"), {
+        stage: "import",
+        summary: summarizeAutoTrackingResult(result)
+      });
+    }
+
     res.json({
+      job: getJob(job.jobId),
       result,
       selectedCount: postIds.length,
       autoTracking: getAutoTrackingPublic(autoTracking),
       latestSnapshot: sanitizeMasterSnapshotRecord(autoTracking.latestSnapshot || store.masterSnapshots?.[0] || null)
     });
   } catch (error) {
+    failJob(job.jobId, error, { stage: "import" });
     next(error);
   }
 });
-
 app.get("/api/auto-tracking/anomalies", async (_req, res, next) => {
   try {
     const store = await readStore();

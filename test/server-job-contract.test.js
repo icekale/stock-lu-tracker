@@ -1,0 +1,27 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(__dirname, "..", relativePath), "utf8");
+}
+
+test("server exposes job overview and detail endpoints", () => {
+  const server = read("src/server.js");
+
+  assert.match(server, /const \{[\s\S]*createJob[\s\S]*getJobOverview[\s\S]*\} = require\("\.\/job-state"\);/);
+  assert.match(server, /app\.use\("\/api\/jobs", requireAdminAuth\);/);
+  assert.match(server, /app\.get\("\/api\/jobs\/overview",\s*\(_req,\s*res\)/);
+  assert.match(server, /app\.get\("\/api\/jobs\/:jobId",\s*\(req,\s*res/);
+});
+
+test("auto tracking actions create and finish observable jobs", () => {
+  const server = read("src/server.js");
+
+  assert.match(server, /const job = createJob\("auto_tracking_run"/);
+  assert.match(server, /startJob\(job\.jobId, \{ stage: "collect"/);
+  assert.match(server, /finishJob\(job\.jobId, \{[\s\S]*summarizeAutoTrackingResult\(result\)/);
+  assert.match(server, /failJob\(job\.jobId, error/);
+  assert.match(server, /const job = createJob\("cookie_keepalive"/);
+});
