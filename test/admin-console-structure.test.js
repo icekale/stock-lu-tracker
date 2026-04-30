@@ -58,3 +58,14 @@ test("admin page includes job status placeholders", () => {
   assert.match(html, /id="jobStatusProgress"/);
   assert.match(html, /id="jobStatusSummary"/);
 });
+
+test("auto-sync script includes admin module switching and job polling", () => {
+  const js = read("public/auto-sync.js");
+
+  assert.match(js, /function setAdminSection\(section\)/);
+  assert.match(js, /document\.querySelectorAll\("\[data-admin-section\]"\)/);
+  assert.match(js, /document\.querySelectorAll\("\[data-admin-panel\]"\)/);
+  assert.match(js, /async function loadJobOverview\(/);
+  assert.match(js, /\/api\/jobs\/overview/);
+  assert.match(js, /function renderJobStatus\(overview\)/);
+});
